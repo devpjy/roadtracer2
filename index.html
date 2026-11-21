@@ -1,0 +1,4355 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#02060e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="전방예측 HUD" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="format-detection" content="telephone=no" />
+  <title>출퇴근 100m 전방 예측기 Mobile HUD</title>
+
+  <!-- 인라인 SVG 파비콘 & iOS 홈 화면 아이콘 (외부 리소스/Base64 미사용) -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='42' fill='%2302060e'/%3E%3Ccircle cx='96' cy='96' r='74' fill='none' stroke='%2322d3ee' stroke-width='6' stroke-dasharray='14 10' opacity='0.55'/%3E%3Cpath d='M96 34 L144 138 L96 112 L48 138 Z' fill='%2322d3ee'/%3E%3Ccircle cx='96' cy='34' r='10' fill='%23f59e0b'/%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='42' fill='%2302060e'/%3E%3Ccircle cx='96' cy='96' r='74' fill='none' stroke='%2322d3ee' stroke-width='8' opacity='0.5'/%3E%3Cpath d='M96 36 L142 140 L96 114 L50 140 Z' fill='%2322d3ee'/%3E%3Ccircle cx='96' cy='36' r='10' fill='%23f59e0b'/%3E%3C/svg%3E" />
+
+  <style>
+    /* ===================================================================== */
+    /* 1. OLED 야간 눈부심 방지 다크 HUD 디자인 토큰                          */
+    /* ===================================================================== */
+    :root {
+      --bg-void: #02060e;
+      --bg-surface: #070d19;
+      --bg-card: #0c1424;
+      --bg-card-alt: #0f192d;
+      --border-subtle: rgba(148, 163, 184, 0.14);
+      --border-strong: rgba(148, 163, 184, 0.28);
+
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+
+      --emerald: #10b981;
+      --emerald-soft: rgba(16, 185, 129, 0.16);
+      --cyan: #22d3ee;
+      --cyan-soft: rgba(34, 211, 238, 0.16);
+      --amber: #f59e0b;
+      --amber-soft: rgba(245, 158, 11, 0.18);
+      --rose: #f43f5e;
+      --rose-soft: rgba(244, 63, 94, 0.20);
+      --indigo: #818cf8;
+      --indigo-soft: rgba(129, 140, 248, 0.16);
+
+      --radius-sm: 10px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+
+      --font-sans: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      background-color: var(--bg-void);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      overflow: hidden;
+      overscroll-behavior: none;
+    }
+
+    button, input, label {
+      font-family: inherit;
+      color: inherit;
+    }
+
+    button {
+      border: none;
+      background: none;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    button:active {
+      transform: scale(0.97);
+    }
+
+    .tabular {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* ===================================================================== */
+    /* 2. 모바일 앱 쉘 (상단바 + 메인 뷰포트 + 하단 고정 3탭)                 */
+    /* ===================================================================== */
+    .app-shell {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100dvh;
+      padding-left: var(--safe-left);
+      padding-right: var(--safe-right);
+      background: radial-gradient(circle at 50% 0%, rgba(34, 211, 238, 0.06), transparent 55%), var(--bg-void);
+    }
+
+    /* 상단 컴팩트 상태바 */
+    .topbar {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: calc(6px + var(--safe-top)) 10px 6px 10px;
+      background: rgba(2, 6, 14, 0.94);
+      border-bottom: 1px solid var(--border-subtle);
+      z-index: 20;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+
+    /* 세그먼트 토글 (실제 / 시뮬) */
+    .seg-toggle {
+      display: inline-flex;
+      padding: 3px;
+      border-radius: 11px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .seg-btn {
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      transition: background 0.18s, color 0.18s;
+      min-height: 30px;
+      white-space: nowrap;
+    }
+
+    .seg-btn.active-sim {
+      background: var(--cyan-soft);
+      color: var(--cyan);
+      box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.45);
+    }
+
+    .seg-btn.active-real {
+      background: var(--emerald-soft);
+      color: var(--emerald);
+      box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.45);
+    }
+
+    /* GPS 상태 뱃지 */
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .status-pill.ok {
+      border-color: rgba(16, 185, 129, 0.45);
+      color: #6ee7b7;
+      background: rgba(16, 185, 129, 0.12);
+    }
+
+    .status-pill.sim {
+      border-color: rgba(34, 211, 238, 0.45);
+      color: #67e8f9;
+      background: rgba(34, 211, 238, 0.12);
+    }
+
+    .status-pill.warn {
+      border-color: rgba(245, 158, 11, 0.45);
+      color: #fcd34d;
+      background: rgba(245, 158, 11, 0.14);
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .status-pill.ok .dot {
+      background: var(--emerald);
+      box-shadow: 0 0 8px var(--emerald);
+    }
+
+    .status-pill.sim .dot {
+      background: var(--cyan);
+      box-shadow: 0 0 8px var(--cyan);
+    }
+
+    .status-pill.warn .dot {
+      background: var(--amber);
+    }
+
+    /* 상단 원형/사각 아이콘 버튼 */
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.18s;
+    }
+
+    .icon-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .icon-btn.on {
+      color: var(--cyan);
+      border-color: rgba(34, 211, 238, 0.42);
+      background: var(--cyan-soft);
+    }
+
+    .icon-btn.on-amber {
+      color: var(--amber);
+      border-color: rgba(245, 158, 11, 0.5);
+      background: var(--amber-soft);
+    }
+
+    .icon-btn.on-emerald {
+      color: var(--emerald);
+      border-color: rgba(16, 185, 129, 0.45);
+      background: var(--emerald-soft);
+    }
+
+    /* 메인 뷰 영역 */
+    .main-stage {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .tab-view {
+      position: absolute;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .tab-view.active {
+      display: flex;
+    }
+
+    /* 앞유리 반사 (HUD 좌우반전) 모드 */
+    .hud-mirrored {
+      transform: scaleX(-1);
+    }
+
+    /* 하단 고정 네비게이션 탭 (3개) */
+    .bottom-nav {
+      flex-shrink: 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      padding: 6px 10px calc(6px + var(--safe-bottom)) 10px;
+      background: rgba(5, 10, 20, 0.96);
+      border-top: 1px solid var(--border-subtle);
+      z-index: 20;
+    }
+
+    .nav-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      padding: 6px 4px;
+      min-height: 48px;
+      border-radius: 12px;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 700;
+      transition: all 0.18s;
+    }
+
+    .nav-btn svg {
+      width: 21px;
+      height: 21px;
+    }
+
+    .nav-btn.active {
+      color: var(--cyan);
+      background: rgba(34, 211, 238, 0.10);
+    }
+
+    /* ===================================================================== */
+    /* 3. 탭 1: '주행 HUD' (한 화면 완벽 수납 + 세로/가로 반응형)              */
+    /* ===================================================================== */
+    #view-hud {
+      padding: 8px 10px 8px 10px;
+      gap: 8px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .hud-grid {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .hud-col-primary,
+    .hud-col-secondary {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+    }
+
+    .hud-col-primary {
+      flex: 1.15;
+    }
+
+    .hud-col-secondary {
+      flex: 1;
+    }
+
+    /* 상단 실시간 경고 배너 */
+    .warn-banner {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: var(--radius-md);
+      border: 1.5px solid var(--rose);
+      background: linear-gradient(90deg, rgba(244, 63, 94, 0.28), rgba(136, 19, 55, 0.35));
+      box-shadow: 0 0 24px -4px rgba(244, 63, 94, 0.55);
+      animation: pulseBorder 1.1s ease-in-out infinite;
+    }
+
+    .warn-banner.amber {
+      border-color: var(--amber);
+      background: linear-gradient(90deg, rgba(245, 158, 11, 0.24), rgba(120, 53, 15, 0.32));
+      box-shadow: 0 0 24px -4px rgba(245, 158, 11, 0.5);
+    }
+
+    @keyframes pulseBorder {
+      0%, 100% { filter: brightness(1); }
+      50% { filter: brightness(1.18); }
+    }
+
+    .warn-left {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+    }
+
+    .warn-ico {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: var(--rose);
+      color: #02060e;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .warn-banner.amber .warn-ico {
+      background: var(--amber);
+    }
+
+    .warn-title {
+      font-size: 13px;
+      font-weight: 900;
+      color: #fff;
+      line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .warn-sub {
+      font-size: 11px;
+      color: #fecdd3;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .warn-banner.amber .warn-sub {
+      color: #fde68a;
+    }
+
+    .warn-metric {
+      font-size: 13px;
+      font-weight: 800;
+      color: #fff;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 5px 9px;
+      border-radius: 9px;
+      flex-shrink: 0;
+    }
+
+    /* HTTPS / 센서 차단 안내 배너 */
+    .https-banner {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 11px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgba(245, 158, 11, 0.45);
+      background: rgba(245, 158, 11, 0.12);
+      font-size: 11.5px;
+      color: #fde68a;
+      line-height: 1.35;
+    }
+
+    .https-banner-btn {
+      flex-shrink: 0;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: var(--amber);
+      color: #02060e;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    /* 메인 히어로 카드 ('전방 예측') */
+    .hero-card {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 11px 12px;
+      border-radius: var(--radius-lg);
+      background: linear-gradient(180deg, #0c1628 0%, #060b16 100%);
+      border: 1px solid rgba(34, 211, 238, 0.22);
+      box-shadow: 0 10px 30px -15px rgba(0, 0, 0, 0.9);
+    }
+
+    .hero-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    /* 예측 거리 원터치 칩 (50 / 100 / 150 / 200m) */
+    .dist-chips {
+      display: inline-flex;
+      gap: 4px;
+      background: rgba(2, 6, 14, 0.7);
+      padding: 3px;
+      border-radius: 10px;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .dist-chip {
+      padding: 5px 9px;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--text-secondary);
+      min-height: 28px;
+      transition: all 0.16s;
+    }
+
+    .dist-chip.active {
+      background: var(--cyan);
+      color: #02060e;
+      box-shadow: 0 0 12px rgba(34, 211, 238, 0.45);
+    }
+
+    .conf-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.12);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-subtle);
+      white-space: nowrap;
+    }
+
+    .conf-badge.learned {
+      background: var(--emerald-soft);
+      color: #6ee7b7;
+      border-color: rgba(16, 185, 129, 0.4);
+    }
+
+    /* 초대형 전방 예측 수치 그리드 */
+    .hero-metrics {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1.25fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 8px;
+      min-height: 0;
+    }
+
+    .pred-box {
+      border-radius: var(--radius-md);
+      background: rgba(2, 6, 14, 0.72);
+      border: 1px solid var(--border-subtle);
+      padding: 9px 11px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-width: 0;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .pred-box.speed-box {
+      grid-row: 1 / span 2;
+      padding: 12px 13px;
+    }
+
+    .pred-box.alert-rose {
+      border-color: rgba(244, 63, 94, 0.7);
+      background: rgba(244, 63, 94, 0.10);
+    }
+
+    .pred-box.alert-amber {
+      border-color: rgba(245, 158, 11, 0.6);
+      background: rgba(245, 158, 11, 0.09);
+    }
+
+    .pred-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+
+    .pred-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      letter-spacing: -0.01em;
+    }
+
+    .mini-pill {
+      font-size: 10.5px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.14);
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .mini-pill.emerald { background: var(--emerald-soft); color: #6ee7b7; }
+    .mini-pill.cyan { background: var(--cyan-soft); color: #67e8f9; }
+    .mini-pill.amber { background: var(--amber-soft); color: #fcd34d; }
+    .mini-pill.rose { background: var(--rose-soft); color: #fda4af; }
+
+    .speed-big-row {
+      display: flex;
+      align-items: baseline;
+      gap: 5px;
+      margin: 4px 0;
+    }
+
+    .speed-big-num {
+      font-size: clamp(44px, 12vw, 68px);
+      font-weight: 900;
+      line-height: 0.96;
+      letter-spacing: -0.04em;
+      color: var(--emerald);
+    }
+
+    .speed-unit {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-secondary);
+    }
+
+    .speed-delta {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--text-secondary);
+      padding: 5px 8px;
+      border-radius: 9px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+
+    .sub-big-row {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+      margin: 2px 0;
+    }
+
+    .sub-big-num {
+      font-size: clamp(24px, 6.5vw, 34px);
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+
+    .sub-unit {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--text-secondary);
+    }
+
+    /* 진동 4단계 미니 바 */
+    .vib-bars {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      height: 5px;
+    }
+
+    .vib-seg {
+      border-radius: 99px;
+      background: rgba(148, 163, 184, 0.16);
+      transition: background 0.18s;
+    }
+
+    /* 가속도 양방향 미니 바 */
+    .accel-track {
+      position: relative;
+      height: 5px;
+      border-radius: 99px;
+      background: rgba(148, 163, 184, 0.16);
+      overflow: hidden;
+    }
+
+    .accel-center {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: rgba(248, 250, 252, 0.4);
+      transform: translateX(-50%);
+    }
+
+    .accel-fill {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 0;
+      background: var(--cyan);
+      transition: all 0.16s;
+    }
+
+    /* 현재 주행 정보 바 (4칸) */
+    .current-bar {
+      flex-shrink: 0;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+
+    .cur-cell {
+      padding: 7px 6px;
+      border-radius: 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      text-align: center;
+      min-width: 0;
+    }
+
+    .cur-lbl {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .cur-val {
+      margin-top: 2px;
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .cur-val small {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-left: 1px;
+    }
+
+    /* 컴팩트 실시간 전방 프로파일 미니 차트 카드 */
+    .mini-chart-card {
+      flex: 1;
+      min-height: 92px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      padding: 8px 10px;
+      border-radius: var(--radius-md);
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .mini-chart-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-secondary);
+    }
+
+    .sim-inline-ctrl {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .tiny-btn {
+      padding: 3px 7px;
+      border-radius: 6px;
+      font-size: 10.5px;
+      font-weight: 800;
+      background: rgba(148, 163, 184, 0.12);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .tiny-btn.active {
+      background: var(--cyan-soft);
+      color: var(--cyan);
+      border-color: rgba(34, 211, 238, 0.45);
+    }
+
+    .canvas-box {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      border-radius: 10px;
+      background: #030710;
+      border: 1px solid rgba(51, 65, 85, 0.5);
+      overflow: hidden;
+    }
+
+    .canvas-box canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 하단 대형 엄지 버튼 영역 */
+    .hud-actions {
+      flex-shrink: 0;
+      display: flex;
+      gap: 8px;
+      align-items: stretch;
+    }
+
+    .btn-primary-drive {
+      flex: 1;
+      min-height: 52px;
+      border-radius: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 15px;
+      font-weight: 900;
+      letter-spacing: -0.01em;
+      background: linear-gradient(135deg, #10b981, #06b6d4);
+      color: #02060e;
+      box-shadow: 0 8px 24px -6px rgba(16, 185, 129, 0.55);
+      transition: all 0.2s;
+    }
+
+    .btn-primary-drive.driving {
+      background: linear-gradient(135deg, #f43f5e, #e11d48);
+      color: #fff;
+      box-shadow: 0 8px 24px -6px rgba(244, 63, 94, 0.55);
+    }
+
+    .btn-sample-quick {
+      padding: 0 13px;
+      min-height: 52px;
+      border-radius: 15px;
+      background: var(--bg-card-alt);
+      border: 1.5px solid rgba(34, 211, 238, 0.45);
+      color: var(--cyan);
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.25;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      max-width: 132px;
+    }
+
+    /* 가로 화면 (Landscape 차량 거치 최적화) */
+    @media (orientation: landscape) and (max-height: 560px) {
+      #view-hud {
+        padding: 6px 10px;
+        gap: 6px;
+      }
+      .hud-grid {
+        flex-direction: row;
+        gap: 10px;
+      }
+      .hud-col-primary {
+        flex: 1.15;
+      }
+      .hud-col-secondary {
+        flex: 1;
+      }
+      .speed-big-num {
+        font-size: clamp(38px, 7.5vw, 56px);
+      }
+      .sub-big-num {
+        font-size: clamp(20px, 4vw, 28px);
+      }
+      .btn-primary-drive,
+      .btn-sample-quick {
+        min-height: 44px;
+        font-size: 14px;
+      }
+      .nav-btn {
+        flex-direction: row;
+        min-height: 36px;
+        padding: 4px 8px;
+        gap: 6px;
+      }
+      .nav-btn svg {
+        width: 17px;
+        height: 17px;
+      }
+      .bottom-nav {
+        padding-top: 4px;
+        padding-bottom: calc(4px + var(--safe-bottom));
+      }
+    }
+
+    /* 데스크톱/태블릿 넓은 화면에서도 깔끔하게 중앙 정렬 */
+    @media (min-width: 960px) {
+      .tab-view {
+        max-width: 1040px;
+        margin: 0 auto;
+        left: 0;
+        right: 0;
+      }
+    }
+
+    /* ===================================================================== */
+    /* 4. 탭 2: '경로 레이더' (히트맵 + 줌 + 0~250m 상세 프로파일)            */
+    /* ===================================================================== */
+    #view-radar {
+      padding: 10px;
+      gap: 10px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .panel-card {
+      border-radius: var(--radius-lg);
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      flex-shrink: 0;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .panel-title {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--text-primary);
+    }
+
+    .panel-sub {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    .chip-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+
+    .ctrl-chip {
+      padding: 6px 10px;
+      border-radius: 9px;
+      font-size: 11.5px;
+      font-weight: 700;
+      background: rgba(2, 6, 14, 0.75);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      min-height: 32px;
+    }
+
+    .ctrl-chip.active {
+      background: var(--cyan-soft);
+      border-color: rgba(34, 211, 238, 0.5);
+      color: var(--cyan);
+    }
+
+    .ctrl-chip.active-rose {
+      background: var(--rose-soft);
+      border-color: rgba(244, 63, 94, 0.5);
+      color: #fda4af;
+    }
+
+    .ctrl-chip.active-emerald {
+      background: var(--emerald-soft);
+      border-color: rgba(16, 185, 129, 0.5);
+      color: #6ee7b7;
+    }
+
+    .radar-stage {
+      position: relative;
+      width: 100%;
+      height: clamp(230px, 38dvh, 360px);
+      border-radius: 14px;
+      background: #030710;
+      border: 1px solid rgba(51, 65, 85, 0.55);
+      overflow: hidden;
+    }
+
+    .radar-stage canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .zoom-controls {
+      position: absolute;
+      right: 10px;
+      bottom: 38px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 5;
+    }
+
+    .zoom-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
+      background: rgba(12, 20, 36, 0.9);
+      border: 1px solid var(--border-strong);
+      color: var(--text-primary);
+      font-size: 20px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .radar-overlay-bottom {
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      pointer-events: none;
+      font-size: 10.5px;
+      color: var(--text-secondary);
+    }
+
+    .radar-tag {
+      padding: 3px 8px;
+      border-radius: 7px;
+      background: rgba(2, 6, 14, 0.82);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .detail-chart-stage {
+      width: 100%;
+      height: clamp(175px, 25dvh, 240px);
+      border-radius: 14px;
+      background: #030710;
+      border: 1px solid rgba(51, 65, 85, 0.55);
+      overflow: hidden;
+    }
+
+    .detail-chart-stage canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .hazard-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .hazard-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 9px 11px;
+      border-radius: 11px;
+      background: rgba(2, 6, 14, 0.65);
+      border: 1px solid var(--border-subtle);
+      font-size: 12px;
+    }
+
+    /* ===================================================================== */
+    /* 5. 탭 3: '설정/데이터' (권한점검, 영점보정, 임계치, 백업, PWA 가이드)   */
+    /* ===================================================================== */
+    #view-settings {
+      padding: 10px 10px 24px 10px;
+      gap: 12px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .setting-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .diag-card {
+      padding: 10px;
+      border-radius: 12px;
+      background: rgba(2, 6, 14, 0.7);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .diag-name {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-secondary);
+    }
+
+    .diag-state {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: var(--text-primary);
+    }
+
+    .diag-state.ok { color: var(--emerald); }
+    .diag-state.warn { color: var(--amber); }
+    .diag-state.err { color: var(--rose); }
+
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .action-btn {
+      flex: 1;
+      min-width: 130px;
+      min-height: 44px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border: 1px solid var(--border-strong);
+      background: var(--bg-card-alt);
+      color: var(--text-primary);
+    }
+
+    .action-btn.cyan {
+      background: var(--cyan-soft);
+      border-color: rgba(34, 211, 238, 0.45);
+      color: var(--cyan);
+    }
+
+    .action-btn.emerald {
+      background: var(--emerald-soft);
+      border-color: rgba(16, 185, 129, 0.45);
+      color: #6ee7b7;
+    }
+
+    .action-btn.amber {
+      background: var(--amber-soft);
+      border-color: rgba(245, 158, 11, 0.45);
+      color: #fcd34d;
+    }
+
+    .action-btn.rose {
+      background: var(--rose-soft);
+      border-color: rgba(244, 63, 94, 0.45);
+      color: #fda4af;
+    }
+
+    .action-btn.indigo {
+      background: var(--indigo-soft);
+      border-color: rgba(129, 140, 248, 0.45);
+      color: #c7d2fe;
+    }
+
+    /* 슬라이더 & 토글 스위치 행 */
+    .slider-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(2, 6, 14, 0.6);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .slider-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12.5px;
+      font-weight: 700;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      border-radius: 99px;
+      accent-color: var(--cyan);
+      cursor: pointer;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(2, 6, 14, 0.6);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .toggle-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .toggle-desc {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    .switch {
+      width: 48px;
+      height: 28px;
+      border-radius: 99px;
+      background: #1e293b;
+      border: 1px solid var(--border-strong);
+      position: relative;
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+
+    .switch::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #94a3b8;
+      transition: transform 0.2s, background 0.2s;
+    }
+
+    .switch.on {
+      background: rgba(16, 185, 129, 0.35);
+      border-color: var(--emerald);
+    }
+
+    .switch.on::after {
+      transform: translateX(20px);
+      background: var(--emerald);
+    }
+
+    /* 통계 4칸 */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .stat-box {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(2, 6, 14, 0.72);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .stat-lbl {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .stat-num {
+      margin-top: 3px;
+      font-size: 20px;
+      font-weight: 900;
+      color: var(--text-primary);
+    }
+
+    /* PWA 설치 & HTTPS 안내 카드 */
+    .guide-box {
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(2, 6, 14, 0.7);
+      border: 1px solid var(--border-subtle);
+      font-size: 12px;
+      line-height: 1.55;
+      color: #cbd5e1;
+    }
+
+    .guide-box strong {
+      color: #fff;
+    }
+
+    .guide-step {
+      margin-top: 6px;
+      padding-left: 10px;
+      border-left: 2px solid var(--cyan);
+    }
+
+    .proto-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 8px;
+      font-size: 11.5px;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    .proto-pill.secure {
+      background: var(--emerald-soft);
+      color: #6ee7b7;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+
+    .proto-pill.insecure {
+      background: var(--amber-soft);
+      color: #fcd34d;
+      border: 1px solid rgba(245, 158, 11, 0.45);
+    }
+
+    /* ===================================================================== */
+    /* 6. 커스텀 모달 & 플로팅 토스트 (alert/confirm 완벽 대체)               */
+    /* ===================================================================== */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 14, 0.85);
+      backdrop-filter: blur(6px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 60;
+    }
+
+    .modal-card {
+      width: 100%;
+      max-width: 340px;
+      border-radius: 18px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-strong);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.8);
+    }
+
+    .modal-title {
+      font-size: 16px;
+      font-weight: 900;
+      color: #fff;
+    }
+
+    .modal-desc {
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .toast-stack {
+      position: fixed;
+      top: calc(56px + var(--safe-top));
+      left: 12px;
+      right: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      pointer-events: none;
+      z-index: 70;
+    }
+
+    .toast {
+      pointer-events: auto;
+      max-width: 420px;
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: rgba(12, 20, 36, 0.96);
+      border: 1px solid rgba(34, 211, 238, 0.45);
+      color: #e0f2fe;
+      font-size: 12.5px;
+      font-weight: 700;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.7);
+      opacity: 0;
+      transform: translateY(-8px);
+      transition: all 0.24s ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .toast.success { border-color: rgba(16, 185, 129, 0.55); color: #d1fae5; }
+    .toast.warn { border-color: rgba(245, 158, 11, 0.6); color: #fef3c7; }
+    .toast.error { border-color: rgba(244, 63, 94, 0.6); color: #ffe4e6; }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+
+    <!-- =================================================================== -->
+    <!-- 상단 컴팩트 상태바                                                   -->
+    <!-- =================================================================== -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <!-- 모드 전환 토글 (실제 센서 / 시뮬레이션) -->
+        <div class="seg-toggle" role="group" aria-label="주행 입력 모드">
+          <button id="btn-mode-real" type="button" class="seg-btn">실제</button>
+          <button id="btn-mode-sim" type="button" class="seg-btn active-sim">시뮬</button>
+        </div>
+
+        <!-- GPS 수신/정확도 뱃지 -->
+        <span id="pill-gps" class="status-pill sim">
+          <span class="dot"></span>
+          <span id="txt-gps" class="tabular">SIM</span>
+        </span>
+      </div>
+
+      <div class="topbar-right">
+        <!-- 사운드 음소거 토글 -->
+        <button id="btn-sound" type="button" class="icon-btn on" title="경고음 켜기/끄기" aria-label="경고음 켜기/끄기">
+          <svg id="ico-sound-on" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+          </svg>
+          <svg id="ico-sound-off" class="hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+          </svg>
+        </button>
+
+        <!-- Wake Lock (화면 꺼짐 방지) 상태 -->
+        <button id="btn-wake" type="button" class="icon-btn" title="화면 꺼짐 방지(Wake Lock)" aria-label="화면 꺼짐 방지">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+          </svg>
+        </button>
+
+        <!-- 앞유리 반사 (HUD 좌우반전) 모드 토글 -->
+        <button id="btn-mirror" type="button" class="icon-btn" title="앞유리 반사 HUD(좌우반전)" aria-label="앞유리 반사 모드">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m-7-4l4-4-4-4m14 8l-4-4 4-4" />
+          </svg>
+        </button>
+
+        <!-- 전체화면 토글 -->
+        <button id="btn-fullscreen" type="button" class="icon-btn" title="전체화면" aria-label="전체화면">
+          <svg id="ico-fs-enter" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" />
+          </svg>
+          <svg id="ico-fs-exit" class="hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- =================================================================== -->
+    <!-- 메인 3탭 스테이지                                                    -->
+    <!-- =================================================================== -->
+    <main class="main-stage">
+
+      <!-- ================================================================= -->
+      <!-- TAB 1: 주행 HUD (한 화면에 전방 예측 & 현재 상태 완벽 수납)         -->
+      <!-- ================================================================= -->
+      <section id="view-hud" class="tab-view active" aria-label="주행 HUD">
+
+        <!-- 실시간 위험 경고 배너 -->
+        <div id="hud-warn-banner" class="warn-banner hidden">
+          <div class="warn-left">
+            <div class="warn-ico">
+              <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <div style="min-width:0;">
+              <div id="hud-warn-title" class="warn-title">100m 전방 과속방지턱 감지</div>
+              <div id="hud-warn-sub" class="warn-sub">미리 감속하여 충격을 줄이세요</div>
+            </div>
+          </div>
+          <div id="hud-warn-metric" class="warn-metric tabular">0.45 G</div>
+        </div>
+
+        <!-- HTTPS / 센서 제한 안내 배너 (실제 센서 오류 시 표시) -->
+        <div id="https-warn-banner" class="https-banner hidden">
+          <div id="https-warn-msg">HTTPS 보안 연결이 아니거나 센서 권한이 차단되었습니다.</div>
+          <button id="btn-banner-tosim" type="button" class="https-banner-btn">시뮬 전환</button>
+        </div>
+
+        <!-- 반응형 2열(가로)/1열(세로) HUD 그리드 -->
+        <div class="hud-grid">
+
+          <!-- 좌/상 컬럼: 메인 히어로 전방 예측 카드 -->
+          <div class="hud-col-primary">
+            <div class="hero-card">
+              <div class="hero-header">
+                <!-- 예측 거리 원터치 선택 칩 -->
+                <div class="dist-chips" role="group" aria-label="전방 예측 거리 선택">
+                  <button type="button" class="dist-chip" data-dist="50">50m</button>
+                  <button type="button" class="dist-chip active" data-dist="100">100m</button>
+                  <button type="button" class="dist-chip" data-dist="150">150m</button>
+                  <button type="button" class="dist-chip" data-dist="200">200m</button>
+                </div>
+
+                <!-- 학습 신뢰도 뱃지 -->
+                <span id="hud-conf-badge" class="conf-badge">미학습 구간</span>
+              </div>
+
+              <!-- 3대 핵심 초대형 수치: 속도 / 진동(G) / 가속도(m/s²) -->
+              <div class="hero-metrics">
+
+                <!-- 1) 전방 예상 속도 (좌측 대형 카드) -->
+                <div id="box-pred-speed" class="pred-box speed-box">
+                  <div class="pred-top">
+                    <span class="pred-label"><span id="lbl-dist-head">100m</span> 전방 속도</span>
+                    <span id="pill-pred-method" class="mini-pill">대기</span>
+                  </div>
+
+                  <div class="speed-big-row">
+                    <span id="pred-speed-val" class="speed-big-num tabular">--</span>
+                    <span class="speed-unit">km/h</span>
+                  </div>
+
+                  <div id="pred-speed-delta" class="speed-delta tabular">
+                    <span>현재 대비</span>
+                    <span id="pred-speed-delta-txt">--</span>
+                  </div>
+                </div>
+
+                <!-- 2) 전방 예상 진동 (우상단) -->
+                <div id="box-pred-vib" class="pred-box">
+                  <div class="pred-top">
+                    <span class="pred-label">예상 진동</span>
+                    <span id="pill-vib-grade" class="mini-pill">미학습</span>
+                  </div>
+                  <div class="sub-big-row">
+                    <span id="pred-vib-val" class="sub-big-num tabular" style="color:var(--rose);">--</span>
+                    <span class="sub-unit">G</span>
+                  </div>
+                  <div class="vib-bars">
+                    <div id="vseg-1" class="vib-seg"></div>
+                    <div id="vseg-2" class="vib-seg"></div>
+                    <div id="vseg-3" class="vib-seg"></div>
+                    <div id="vseg-4" class="vib-seg"></div>
+                  </div>
+                </div>
+
+                <!-- 3) 전방 예상 가속도 (우하단) -->
+                <div id="box-pred-accel" class="pred-box">
+                  <div class="pred-top">
+                    <span class="pred-label">예상 가속도</span>
+                    <span id="pill-accel-state" class="mini-pill">미학습</span>
+                  </div>
+                  <div class="sub-big-row">
+                    <span id="pred-accel-val" class="sub-big-num tabular" style="color:var(--cyan);">--</span>
+                    <span class="sub-unit">m/s²</span>
+                  </div>
+                  <div class="accel-track">
+                    <div class="accel-center"></div>
+                    <div id="pred-accel-fill" class="accel-fill"></div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- 우/하 컬럼: 현재 상태 바 + 컴팩트 0~200m 미니 프로파일 + 대형 엄지 버튼 -->
+          <div class="hud-col-secondary">
+
+            <!-- 현재 주행 정보 바 -->
+            <div class="current-bar">
+              <div class="cur-cell">
+                <div class="cur-lbl">현재 속도</div>
+                <div class="cur-val tabular"><span id="cur-speed">0</span><small>km/h</small></div>
+              </div>
+              <div class="cur-cell">
+                <div class="cur-lbl">현재 가속도</div>
+                <div class="cur-val tabular" style="color:#67e8f9;"><span id="cur-accel">0.0</span><small>m/s²</small></div>
+              </div>
+              <div class="cur-cell">
+                <div class="cur-lbl">현재 진동</div>
+                <div class="cur-val tabular" style="color:#fda4af;"><span id="cur-vib">0.00</span><small>G</small></div>
+              </div>
+              <div class="cur-cell">
+                <div class="cur-lbl">진행 방위</div>
+                <div id="cur-heading" class="cur-val tabular">N 0°</div>
+              </div>
+            </div>
+
+            <!-- 컴팩트 전방 0~200m 프로파일 미니 차트 -->
+            <div class="mini-chart-card">
+              <div class="mini-chart-head">
+                <span>0~200m 전방 프로파일 <span id="mini-zone-txt" style="color:var(--cyan);font-weight:800;"></span></span>
+                <!-- 시뮬레이션 모드 시 인라인 배속/방향 빠른 조절 -->
+                <div id="sim-inline-bar" class="sim-inline-ctrl">
+                  <button type="button" class="tiny-btn sim-spd active" data-spd="1">1x</button>
+                  <button type="button" class="tiny-btn sim-spd" data-spd="2">2x</button>
+                  <button type="button" class="tiny-btn sim-spd" data-spd="4">4x</button>
+                  <button id="btn-sim-dir" type="button" class="tiny-btn">출근</button>
+                </div>
+              </div>
+              <div id="mini-canvas-wrap" class="canvas-box">
+                <canvas id="mini-profile-canvas"></canvas>
+              </div>
+            </div>
+
+            <!-- 하단 대형 엄지 버튼 -->
+            <div class="hud-actions">
+              <button id="btn-drive-toggle" type="button" class="btn-primary-drive">
+                <svg id="ico-play" width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                <svg id="ico-pause" class="hidden" width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+                <span id="txt-drive-btn">주행 기록 &amp; 예측 시작</span>
+              </button>
+
+              <!-- 학습 데이터가 비어 있을 때 즉시 체험할 수 있는 퀵 샘플 버튼 -->
+              <button id="btn-quick-sample" type="button" class="btn-sample-quick">
+                샘플 5회<br />학습 불러오기
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- TAB 2: 경로 레이더 (히트맵 + 헤딩업/북쪽 + 줌 + 0~250m 상세 차트)   -->
+      <!-- ================================================================= -->
+      <section id="view-radar" class="tab-view" aria-label="경로 레이더">
+
+        <!-- 카드 1: 학습 경로 히트맵 레이더 -->
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <div class="panel-title">학습 경로 레이더 &amp; 히트맵</div>
+              <div class="panel-sub">동일 진행 방향 구간을 선명하게, 반대 방향은 흐리게 표시합니다.</div>
+            </div>
+            <div class="chip-row">
+              <button type="button" class="ctrl-chip active-rose radar-metric-btn" data-metric="vib">진동</button>
+              <button type="button" class="ctrl-chip radar-metric-btn" data-metric="speed">속도</button>
+              <button type="button" class="ctrl-chip radar-metric-btn" data-metric="accel">가속도</button>
+              <button id="btn-radar-orient" type="button" class="ctrl-chip active">헤딩업 ↑</button>
+            </div>
+          </div>
+
+          <div id="radar-stage" class="radar-stage">
+            <canvas id="radar-canvas"></canvas>
+
+            <!-- 줌 +/- 컨트롤 -->
+            <div class="zoom-controls">
+              <button id="btn-zoom-in" type="button" class="zoom-btn" aria-label="지도 확대">+</button>
+              <button id="btn-zoom-out" type="button" class="zoom-btn" aria-label="지도 축소">−</button>
+            </div>
+
+            <div class="radar-overlay-bottom tabular">
+              <span class="radar-tag">▲ 차량 · <span style="color:#f59e0b;">●</span> <span id="radar-dist-tag">100m</span> 타겟</span>
+              <span id="radar-scale-tag" class="radar-tag">반경 240m</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 카드 2: 0 ~ 250m 전방 상세 프로파일 차트 -->
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <div class="panel-title">0 ~ 250m 전방 상세 도로 프로파일</div>
+              <div class="panel-sub">15m 노드 간격으로 전방 속도·진동(G)·가속도 변화를 정밀 분석합니다.</div>
+            </div>
+            <div class="chip-row">
+              <button type="button" class="ctrl-chip active-emerald detail-series-btn" data-series="speed">속도</button>
+              <button type="button" class="ctrl-chip active-rose detail-series-btn" data-series="vib">진동</button>
+              <button type="button" class="ctrl-chip active detail-series-btn" data-series="accel">가속도</button>
+            </div>
+          </div>
+
+          <div id="detail-chart-stage" class="detail-chart-stage">
+            <canvas id="detail-profile-canvas"></canvas>
+          </div>
+        </div>
+
+        <!-- 카드 3: 전방 250m 이내 감지된 주의 지점 요약 -->
+        <div class="panel-card">
+          <div class="panel-head">
+            <div class="panel-title">전방 250m 이내 주의 구간</div>
+            <span id="upcoming-count-tag" class="mini-pill">0곳</span>
+          </div>
+          <div id="upcoming-hazard-list" class="hazard-list">
+            <div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;">
+              전방 250m 이내 감지된 특이 진동/급감속 구간이 없습니다.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- TAB 3: 설정/데이터 (권한점검, 영점보정, 임계치, 백업, PWA 가이드)    -->
+      <!-- ================================================================= -->
+      <section id="view-settings" class="tab-view" aria-label="설정 및 데이터">
+
+        <!-- 1. 원터치 센서 권한 일괄 점검 & 거치대 영점 보정 -->
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <div class="panel-title">센서 권한 일괄 점검 &amp; 거치대 영점 보정</div>
+              <div class="panel-sub">실제 차량 주행 전 GPS, 가속도계(iOS 포함), WakeLock, 오디오를 한 번에 점검합니다.</div>
+            </div>
+          </div>
+
+          <div class="setting-grid">
+            <div class="diag-card">
+              <span class="diag-name">GPS 위치 센서</span>
+              <span id="diag-gps" class="diag-state">미점검</span>
+            </div>
+            <div class="diag-card">
+              <span class="diag-name">가속도계 (IMU)</span>
+              <span id="diag-imu" class="diag-state">미점검</span>
+            </div>
+            <div class="diag-card">
+              <span class="diag-name">화면 꺼짐 방지</span>
+              <span id="diag-wake" class="diag-state">미점검</span>
+            </div>
+            <div class="diag-card">
+              <span class="diag-name">오디오 / 진동 피드백</span>
+              <span id="diag-audio" class="diag-state">미점검</span>
+            </div>
+          </div>
+
+          <div class="btn-row">
+            <button id="btn-check-sensors" type="button" class="action-btn cyan">센서 권한 일괄 점검</button>
+            <button id="btn-calibrate-imu" type="button" class="action-btn amber">거치대 영점 보정 (2초)</button>
+          </div>
+          <div id="calib-status-txt" style="font-size:11.5px;color:var(--text-secondary);">
+            현재 영점 보정 기준: <span id="val-zero-offset" class="tabular" style="color:var(--cyan);font-weight:700;">0.000 G</span> (정차 중 차량 진동 노이즈 제거)
+          </div>
+        </div>
+
+        <!-- 2. 경고 임계치 & 주행 피드백 설정 -->
+        <div class="panel-card">
+          <div class="panel-title">경고 임계치 &amp; 피드백 설정</div>
+
+          <div class="slider-block">
+            <div class="slider-top">
+              <span>강한 진동 / 방지턱 경고 임계치</span>
+              <span id="val-vib-thresh" class="tabular" style="color:var(--rose);">0.30 G</span>
+            </div>
+            <input id="slider-vib-thresh" type="range" min="0.18" max="0.60" step="0.02" value="0.30" />
+          </div>
+
+          <div class="slider-block">
+            <div class="slider-top">
+              <span>급감속 경고 임계치</span>
+              <span id="val-brake-thresh" class="tabular" style="color:var(--amber);">-1.4 m/s²</span>
+            </div>
+            <input id="slider-brake-thresh" type="range" min="-3.0" max="-0.8" step="0.1" value="-1.4" />
+          </div>
+
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-title">경고음 (Web Audio 비프)</div>
+              <div class="toggle-desc">전방 방지턱·급감속 감지 시 경고음 출력</div>
+            </div>
+            <button id="sw-sound" type="button" class="switch on" role="switch" aria-checked="true"></button>
+          </div>
+
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-title">진동 피드백 (Haptic)</div>
+              <div class="toggle-desc">안드로이드 스마트폰에서 경고 시 진동 알림</div>
+            </div>
+            <button id="sw-haptic" type="button" class="switch on" role="switch" aria-checked="true"></button>
+          </div>
+
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-title">주행 중 자동 학습 기록</div>
+              <div class="toggle-desc">끄면 기존 학습 데이터만 사용하는 예측 전용 모드</div>
+            </div>
+            <button id="sw-learn" type="button" class="switch on" role="switch" aria-checked="true"></button>
+          </div>
+        </div>
+
+        <!-- 3. 축적 학습 데이터 관리 & 백업/복원 -->
+        <div class="panel-card">
+          <div class="panel-head">
+            <div>
+              <div class="panel-title">축적 학습 데이터베이스</div>
+              <div class="panel-sub">15m 공간 노드 + 진행 방위(±55°) 분리 · 브라우저 영구 저장</div>
+            </div>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-box">
+              <div class="stat-lbl">학습된 도로 노드</div>
+              <div class="stat-num tabular" style="color:var(--cyan);"><span id="st-nodes">0</span> <small style="font-size:11px;color:var(--text-secondary);">개</small></div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-lbl">누적 주행 횟수</div>
+              <div class="stat-num tabular"><span id="st-trips">0</span> <small style="font-size:11px;color:var(--text-secondary);">회</small></div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-lbl">누적 학습 거리</div>
+              <div class="stat-num tabular" style="color:var(--emerald);"><span id="st-km">0.00</span> <small style="font-size:11px;color:var(--text-secondary);">km</small></div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-lbl">총 수집 샘플</div>
+              <div class="stat-num tabular"><span id="st-samples">0</span> <small style="font-size:11px;color:var(--text-secondary);">건</small></div>
+            </div>
+          </div>
+
+          <div class="btn-row">
+            <button id="btn-settings-sample" type="button" class="action-btn cyan">샘플 출퇴근 5회 생성</button>
+            <button id="btn-export-json" type="button" class="action-btn emerald">JSON 백업</button>
+            <label class="action-btn indigo" style="cursor:pointer;">
+              JSON 불러오기
+              <input id="input-import-json" type="file" accept=".json,application/json" class="hidden" />
+            </label>
+            <button id="btn-export-csv" type="button" class="action-btn">CSV 내보내기</button>
+            <button id="btn-reset-data" type="button" class="action-btn rose">데이터 초기화</button>
+          </div>
+        </div>
+
+        <!-- 4. 스마트폰 홈 화면 설치(PWA) & HTTPS 실행 가이드 -->
+        <div class="panel-card">
+          <div class="panel-title">스마트폰 앱 설치(PWA) &amp; 실제 도로 주행 안내</div>
+          <div class="guide-box">
+            <div id="proto-status-pill" class="proto-pill secure">현재 접속 환경 확인 중...</div>
+
+            <div><strong>1. 실제 도로 주행 시 HTTPS 필수</strong></div>
+            <div class="guide-step">
+              스마트폰 브라우저 보안 정책상 <code>file://</code>이나 일반 <code>http://</code>에서는 <strong>GPS와 가속도계(진동 센서)가 차단</strong>됩니다.<br />
+              이 단일 HTML 파일을 <strong>GitHub Pages</strong>, <strong>Netlify Drop</strong>, <strong>Cloudflare Pages</strong> 등에 올려 <code>https://</code> 주소로 열어 사용하세요.
+            </div>
+
+            <div style="margin-top:10px;"><strong>2. 안드로이드 (Chrome) 홈 화면 설치</strong></div>
+            <div class="guide-step">
+              Chrome으로 <code>https://</code> 주소 접속 → 우측 상단 <strong>메뉴(⋮)</strong> → <strong>홈 화면에 추가</strong> (또는 앱 설치) → 전체화면 앱처럼 실행
+            </div>
+
+            <div style="margin-top:10px;"><strong>3. 아이폰 (Safari) 홈 화면 설치</strong></div>
+            <div class="guide-step">
+              Safari로 <code>https://</code> 주소 접속 → 하단 <strong>공유 버튼(□↑)</strong> → <strong>홈 화면에 추가</strong> → 실행 후 상단 <strong>센서 권한 일괄 점검</strong>을 1회 눌러 가속도계 권한을 허용하세요.
+            </div>
+          </div>
+        </div>
+
+      </section>
+    </main>
+
+    <!-- =================================================================== -->
+    <!-- 하단 고정 3탭 네비게이션                                              -->
+    <!-- =================================================================== -->
+    <nav class="bottom-nav" aria-label="메인 메뉴">
+      <button type="button" class="nav-btn active" data-tab="hud">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>주행 HUD</span>
+      </button>
+      <button type="button" class="nav-btn" data-tab="radar">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+        </svg>
+        <span>경로 레이더</span>
+      </button>
+      <button type="button" class="nav-btn" data-tab="settings">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+        <span>설정/데이터</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- 데이터 초기화 확인 모달 (confirm() 대체) -->
+  <div id="modal-reset" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-title">학습 데이터 전체 초기화</div>
+      <div class="modal-desc">지금까지 축적된 모든 출퇴근 경로 노드와 주행 통계를 영구 삭제합니다. 필요하다면 먼저 JSON 백업을 저장해 두세요.</div>
+      <div class="btn-row">
+        <button id="btn-reset-cancel" type="button" class="action-btn">취소</button>
+        <button id="btn-reset-confirm" type="button" class="action-btn rose">모두 삭제</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 플로팅 토스트 컨테이너 (alert() 대체) -->
+  <div id="toast-stack" class="toast-stack"></div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      // =====================================================================
+      // 1. 인라인 PWA Web App Manifest 동적 주입 (홈 화면 전체화면 실행 지원)
+      // =====================================================================
+      function injectPwaManifest() {
+        try {
+          const iconSvg = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%2302060e'/%3E%3Ccircle cx='256' cy='256' r='192' fill='none' stroke='%2322d3ee' stroke-width='18' stroke-dasharray='32 22' opacity='0.55'/%3E%3Cpath d='M256 92 L384 372 L256 302 L128 372 Z' fill='%2322d3ee'/%3E%3Ccircle cx='256' cy='92' r='26' fill='%23f59e0b'/%3E%3C/svg%3E";
+          const manifestObj = {
+            name: '출퇴근 100m 전방 예측기 Mobile HUD',
+            short_name: '전방예측 HUD',
+            description: '매일 반복되는 출퇴근 경로를 학습해 100m 전방의 속도, 가속도, 진동을 실시간 예측하는 차량용 HUD',
+            start_url: '.',
+            display: 'standalone',
+            orientation: 'any',
+            background_color: '#02060e',
+            theme_color: '#02060e',
+            icons: [
+              { src: iconSvg, sizes: '192x192', type: 'image/svg+xml', purpose: 'any maskable' },
+              { src: iconSvg, sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable' }
+            ]
+          };
+          const blob = new Blob([JSON.stringify(manifestObj)], { type: 'application/manifest+json' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('link');
+          link.rel = 'manifest';
+          link.href = url;
+          document.head.appendChild(link);
+        } catch (err) {
+          // 일부 샌드박스 iFrame에서 무시
+        }
+      }
+
+      // =====================================================================
+      // 2. 핵심 상수 & 상태 객체
+      // =====================================================================
+      const DB_STORAGE_KEY = 'commute_mobile_hud_db_v3';
+      const CFG_STORAGE_KEY = 'commute_mobile_hud_cfg_v3';
+      const EARTH_R = 6371000;
+      const G_UNIT = 9.80665;
+      const NODE_STEP_M = 15;             // 15m 공간 노드 간격
+      const NODE_MERGE_RADIUS_M = 14.5;   // 동일 노드 병합 반경
+      const HEADING_TOL_DEG = 55;         // 출근/퇴근 방향 분리 허용 각도 (±55°)
+      const GRID_LAT_CELL = 0.00018;      // 약 20m 위도 그리드 셀
+      const GRID_LNG_CELL = 0.00022;      // 약 20m 경도 그리드 셀
+      const ORIGIN = { lat: 36.504100, lng: 127.265100 }; // 세종시 기준점
+      const WARN_COOLDOWN_MS = 5500;      // 경고음/진동 중복 방지 쿨다운
+
+      const state = {
+        activeTab: 'hud',         // 'hud' | 'radar' | 'settings'
+        mode: 'sim',              // 'real' | 'sim'
+        isDriving: false,
+        mirrored: false,
+        lookaheadM: 100,          // 50 | 100 | 150 | 200
+
+        // 사용자 설정 (localStorage 영구 저장)
+        settings: {
+          vibThresholdG: 0.30,    // 강한 진동 경고 임계치 (G)
+          brakeThresholdMs2: -1.4,// 급감속 경고 임계치 (m/s²)
+          soundEnabled: true,
+          hapticEnabled: true,
+          learningEnabled: true,
+          imuZeroOffsetG: 0.0,    // 거치대 영점 보정 노이즈 기준 (G)
+        },
+
+        // 시뮬레이터 상태
+        sim: {
+          speedMult: 1,           // 1 | 2 | 4
+          reverse: false,         // false: 출근(정방향) / true: 퇴근(역방향)
+          distM: 0,
+          lastSpeedMs: 7.5,
+          track: [],
+          totalLen: 1800,
+          zoneLabel: '출발 대기',
+        },
+
+        // 실시간 차량 상태
+        vehicle: {
+          lat: ORIGIN.lat,
+          lng: ORIGIN.lng,
+          heading: 0,
+          speedMs: 0,
+          speedKmh: 0,
+          accelMs2: 0,
+          vibG: 0,                // 현재 진동 RMS (G)
+          accuracy: null,
+          gpsOk: false,
+          imuOk: false,
+          timestamp: Date.now(),
+        },
+
+        // 이전 GPS (실제 속도/방위각/dv/dt 계산용)
+        prevGps: null,
+
+        // IMU 하이패스 중력 제거 필터 & 영점 보정
+        imu: {
+          gravity: { x: 0, y: 0, z: G_UNIT },
+          prevLin: { x: 0, y: 0, z: 0 },
+          winG: [],
+          rawVibG: 0,
+          calibrating: false,
+          calibSamples: [],
+        },
+
+        // 공간 학습 데이터베이스 + 고속 조회용 그리드 인덱스
+        db: {
+          trips: 0,
+          totalSamples: 0,
+          totalMeters: 0,
+          nextId: 1,
+          nodes: [],
+        },
+        gridIndex: new Map(),     // "gx,gy" -> Node[]
+        nodeMap: new Map(),       // id -> Node
+
+        // 학습 트래커
+        tracker: {
+          lastLat: null,
+          lastLng: null,
+          lastNodeId: null,
+          sessionMovedM: 0,
+          sessionTripAdded: false,
+        },
+
+        // 예측 결과 & 0~250m 프로파일
+        pred: {
+          matched: false,
+          method: 'NONE',
+          speedKmh: null,
+          accelMs2: null,
+          vibG: null,
+          maxVibG: null,
+          minAccel: null,
+          count: 0,
+          confidence: 0,
+          targetLat: null,
+          targetLng: null,
+          profile: [],            // 15m 간격 보간 프로파일 [{dist, speed, vibG, maxVibG, accel, minAccel, count}]
+          rawChain: [],
+          warning: null,
+          upcomingHazards: [],
+        },
+
+        lastWarnKey: '',
+        lastWarnTime: 0,
+
+        // 레이더 & 상세 차트 UI 옵션
+        radar: {
+          metric: 'vib',          // 'vib' | 'speed' | 'accel'
+          headingUp: true,
+          radiusM: 240,           // 120 ~ 600m (줌 +/-)
+        },
+        detailSeries: {
+          speed: true,
+          vib: true,
+          accel: true,
+        },
+      };
+
+      let geoWatchId = null;
+      let simTimerId = null;
+      let wakeLock = null;
+      let audioCtx = null;
+      let lastDbSaveTs = 0;
+
+      // =====================================================================
+      // 3. DOM 요소 캐싱
+      // =====================================================================
+      const $ = (id) => document.getElementById(id);
+      const el = {
+        btnModeReal: $('btn-mode-real'),
+        btnModeSim: $('btn-mode-sim'),
+        pillGps: $('pill-gps'),
+        txtGps: $('txt-gps'),
+        btnSound: $('btn-sound'),
+        icoSoundOn: $('ico-sound-on'),
+        icoSoundOff: $('ico-sound-off'),
+        btnWake: $('btn-wake'),
+        btnMirror: $('btn-mirror'),
+        btnFullscreen: $('btn-fullscreen'),
+        icoFsEnter: $('ico-fs-enter'),
+        icoFsExit: $('ico-fs-exit'),
+
+        viewHud: $('view-hud'),
+        viewRadar: $('view-radar'),
+        viewSettings: $('view-settings'),
+
+        hudWarnBanner: $('hud-warn-banner'),
+        hudWarnTitle: $('hud-warn-title'),
+        hudWarnSub: $('hud-warn-sub'),
+        hudWarnMetric: $('hud-warn-metric'),
+
+        httpsWarnBanner: $('https-warn-banner'),
+        httpsWarnMsg: $('https-warn-msg'),
+        btnBannerToSim: $('btn-banner-tosim'),
+
+        hudConfBadge: $('hud-conf-badge'),
+        lblDistHead: $('lbl-dist-head'),
+        pillPredMethod: $('pill-pred-method'),
+        boxPredSpeed: $('box-pred-speed'),
+        predSpeedVal: $('pred-speed-val'),
+        predSpeedDelta: $('pred-speed-delta'),
+        predSpeedDeltaTxt: $('pred-speed-delta-txt'),
+
+        boxPredVib: $('box-pred-vib'),
+        pillVibGrade: $('pill-vib-grade'),
+        predVibVal: $('pred-vib-val'),
+        vseg1: $('vseg-1'),
+        vseg2: $('vseg-2'),
+        vseg3: $('vseg-3'),
+        vseg4: $('vseg-4'),
+
+        boxPredAccel: $('box-pred-accel'),
+        pillAccelState: $('pill-accel-state'),
+        predAccelVal: $('pred-accel-val'),
+        predAccelFill: $('pred-accel-fill'),
+
+        curSpeed: $('cur-speed'),
+        curAccel: $('cur-accel'),
+        curVib: $('cur-vib'),
+        curHeading: $('cur-heading'),
+
+        miniZoneTxt: $('mini-zone-txt'),
+        simInlineBar: $('sim-inline-bar'),
+        btnSimDir: $('btn-sim-dir'),
+        miniCanvasWrap: $('mini-canvas-wrap'),
+        miniCanvas: $('mini-profile-canvas'),
+
+        btnDriveToggle: $('btn-drive-toggle'),
+        icoPlay: $('ico-play'),
+        icoPause: $('ico-pause'),
+        txtDriveBtn: $('txt-drive-btn'),
+        btnQuickSample: $('btn-quick-sample'),
+
+        radarStage: $('radar-stage'),
+        radarCanvas: $('radar-canvas'),
+        btnRadarOrient: $('btn-radar-orient'),
+        btnZoomIn: $('btn-zoom-in'),
+        btnZoomOut: $('btn-zoom-out'),
+        radarDistTag: $('radar-dist-tag'),
+        radarScaleTag: $('radar-scale-tag'),
+        detailChartStage: $('detail-chart-stage'),
+        detailCanvas: $('detail-profile-canvas'),
+        upcomingCountTag: $('upcoming-count-tag'),
+        upcomingHazardList: $('upcoming-hazard-list'),
+
+        diagGps: $('diag-gps'),
+        diagImu: $('diag-imu'),
+        diagWake: $('diag-wake'),
+        diagAudio: $('diag-audio'),
+        btnCheckSensors: $('btn-check-sensors'),
+        btnCalibrateImu: $('btn-calibrate-imu'),
+        valZeroOffset: $('val-zero-offset'),
+
+        sliderVibThresh: $('slider-vib-thresh'),
+        valVibThresh: $('val-vib-thresh'),
+        sliderBrakeThresh: $('slider-brake-thresh'),
+        valBrakeThresh: $('val-brake-thresh'),
+        swSound: $('sw-sound'),
+        swHaptic: $('sw-haptic'),
+        swLearn: $('sw-learn'),
+
+        stNodes: $('st-nodes'),
+        stTrips: $('st-trips'),
+        stKm: $('st-km'),
+        stSamples: $('st-samples'),
+        btnSettingsSample: $('btn-settings-sample'),
+        btnExportJson: $('btn-export-json'),
+        inputImportJson: $('input-import-json'),
+        btnExportCsv: $('btn-export-csv'),
+        btnResetData: $('btn-reset-data'),
+        protoStatusPill: $('proto-status-pill'),
+
+        modalReset: $('modal-reset'),
+        btnResetCancel: $('btn-reset-cancel'),
+        btnResetConfirm: $('btn-reset-confirm'),
+        toastStack: $('toast-stack'),
+      };
+
+      // =====================================================================
+      // 4. 지리 계산 & 등급 분류 유틸리티
+      // =====================================================================
+      const toRad = (d) => (d * Math.PI) / 180;
+      const toDeg = (r) => (r * 180) / Math.PI;
+      const normDeg = (d) => ((d % 360) + 360) % 360;
+
+      function angleDiff(a, b) {
+        const diff = Math.abs(normDeg(a) - normDeg(b));
+        return diff > 180 ? 360 - diff : diff;
+      }
+
+      function haversineM(lat1, lng1, lat2, lng2) {
+        const dLat = toRad(lat2 - lat1);
+        const dLng = toRad(lng2 - lng1);
+        const s1 = Math.sin(dLat / 2);
+        const s2 = Math.sin(dLng / 2);
+        const a = s1 * s1 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * s2 * s2;
+        return EARTH_R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      }
+
+      function calcBearing(lat1, lng1, lat2, lng2) {
+        const p1 = toRad(lat1);
+        const p2 = toRad(lat2);
+        const dl = toRad(lng2 - lng1);
+        const y = Math.sin(dl) * Math.cos(p2);
+        const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+        return normDeg(toDeg(Math.atan2(y, x)));
+      }
+
+      function projectPoint(lat, lng, bearingDeg, distM) {
+        const delta = distM / EARTH_R;
+        const theta = toRad(bearingDeg);
+        const p1 = toRad(lat);
+        const l1 = toRad(lng);
+        const sp2 = Math.sin(p1) * Math.cos(delta) + Math.cos(p1) * Math.sin(delta) * Math.cos(theta);
+        const p2 = Math.asin(Math.max(-1, Math.min(1, sp2)));
+        const y = Math.sin(theta) * Math.sin(delta) * Math.cos(p1);
+        const x = Math.cos(delta) - Math.sin(p1) * Math.sin(p2);
+        return { lat: toDeg(p2), lng: toDeg(l1 + Math.atan2(y, x)) };
+      }
+
+      function toLocalXY(lat, lng, refLat, refLng) {
+        return {
+          x: (lng - refLng) * 111320 * Math.cos(toRad(refLat)),
+          y: (lat - refLat) * 111320,
+        };
+      }
+
+      function formatCompass(deg) {
+        const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+        const d = Math.round(normDeg(deg));
+        return `${dirs[Math.round(d / 45) % 8]} ${d}°`;
+      }
+
+      /** 진동 RMS(G) 4단계 분류: 매끄러움 / 보통 / 거침 / 충격 */
+      function classifyVibG(g) {
+        const thr = state.settings.vibThresholdG;
+        if (g >= thr) return { label: '충격', level: 4, color: '#f43f5e', cls: 'rose' };
+        if (g >= thr * 0.68) return { label: '거침', level: 3, color: '#f59e0b', cls: 'amber' };
+        if (g >= 0.11) return { label: '보통', level: 2, color: '#22d3ee', cls: 'cyan' };
+        return { label: '매끄러움', level: 1, color: '#10b981', cls: 'emerald' };
+      }
+
+      /** 가속도(m/s²) 상태 분류: 급감속 / 감속 / 정속 / 가속 */
+      function classifyAccel(a) {
+        if (a <= state.settings.brakeThresholdMs2) return { label: '급감속', color: '#f43f5e', cls: 'rose' };
+        if (a <= -0.45) return { label: '감속', color: '#f59e0b', cls: 'amber' };
+        if (a >= 0.55) return { label: '가속', color: '#10b981', cls: 'emerald' };
+        return { label: '정속', color: '#22d3ee', cls: 'cyan' };
+      }
+
+      /** 토스트 알림 (alert() 대체) */
+      function showToast(msg, type = 'info') {
+        const node = document.createElement('div');
+        node.className = `toast ${type}`;
+        node.textContent = msg;
+        el.toastStack.appendChild(node);
+        requestAnimationFrame(() => node.classList.add('show'));
+        setTimeout(() => {
+          node.classList.remove('show');
+          setTimeout(() => node.remove(), 260);
+        }, 2800);
+      }
+
+      /** Web Audio API 경고음 & Haptic 진동 피드백 */
+      function triggerAlertFeedback(severity = 'warn') {
+        if (state.settings.soundEnabled) {
+          try {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (AC) {
+              if (!audioCtx) audioCtx = new AC();
+              if (audioCtx.state === 'suspended') audioCtx.resume();
+              const now = audioCtx.currentTime;
+              const times = severity === 'critical' ? [0, 0.15] : [0];
+              const freq = severity === 'critical' ? 920 : 680;
+              times.forEach((off) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = severity === 'critical' ? 'triangle' : 'sine';
+                osc.frequency.setValueAtTime(freq, now + off);
+                osc.frequency.exponentialRampToValueAtTime(freq * 0.82, now + off + 0.11);
+                gain.gain.setValueAtTime(0.001, now + off);
+                gain.gain.exponentialRampToValueAtTime(0.16, now + off + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + off + 0.13);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now + off);
+                osc.stop(now + off + 0.14);
+              });
+            }
+          } catch (e) {
+            // 오디오 정책 제한 시 무시
+          }
+        }
+
+        if (state.settings.hapticEnabled && typeof navigator.vibrate === 'function') {
+          try {
+            navigator.vibrate(severity === 'critical' ? [130, 70, 130] : [90]);
+          } catch (e) {
+            // 미지원 브라우저 무시
+          }
+        }
+      }
+
+      // =====================================================================
+      // 5. 1.8km 출퇴근 순환 가상 코스 생성 & 도로 프로파일
+      // =====================================================================
+      function buildSimTrack() {
+        const ctrl = [
+          { x: 0, y: 0 },
+          { x: 0, y: 185 },
+          { x: 18, y: 345 },
+          { x: 135, y: 475 },
+          { x: 315, y: 505 },
+          { x: 475, y: 435 },
+          { x: 545, y: 285 },
+          { x: 530, y: 105 },
+          { x: 435, y: -45 },
+          { x: 265, y: -105 },
+          { x: 105, y: -70 },
+        ];
+
+        const raw = [];
+        const n = ctrl.length;
+        const sub = 36;
+        for (let i = 0; i < n; i++) {
+          const p0 = ctrl[(i - 1 + n) % n];
+          const p1 = ctrl[i];
+          const p2 = ctrl[(i + 1) % n];
+          const p3 = ctrl[(i + 2) % n];
+          for (let s = 0; s < sub; s++) {
+            const t = s / sub;
+            const t2 = t * t;
+            const t3 = t2 * t;
+            raw.push({
+              x: 0.5 * (2 * p1.x + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+              y: 0.5 * (2 * p1.y + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
+            });
+          }
+        }
+
+        let rawLen = 0;
+        for (let i = 0; i < raw.length; i++) {
+          const nx = raw[(i + 1) % raw.length];
+          rawLen += Math.hypot(nx.x - raw[i].x, nx.y - raw[i].y);
+        }
+        const scale = 1800 / rawLen;
+        const cosLat = Math.cos(toRad(ORIGIN.lat));
+        const track = [];
+        let acc = 0;
+
+        for (let i = 0; i < raw.length; i++) {
+          const a = raw[i];
+          const b = raw[(i + 1) % raw.length];
+          const ax = a.x * scale, ay = a.y * scale;
+          const bx = b.x * scale, by = b.y * scale;
+          track.push({
+            s: acc,
+            lat: ORIGIN.lat + ay / 111320,
+            lng: ORIGIN.lng + ax / (111320 * cosLat),
+            heading: normDeg(toDeg(Math.atan2(bx - ax, by - ay))),
+          });
+          acc += Math.hypot(bx - ax, by - ay);
+        }
+        state.sim.track = track;
+        state.sim.totalLen = acc;
+      }
+
+      function sampleSimTrack(sM, reverse) {
+        const tr = state.sim.track;
+        const total = state.sim.totalLen;
+        const s = ((sM % total) + total) % total;
+        let lo = 0, hi = tr.length - 1;
+        while (lo < hi) {
+          const mid = (lo + hi + 1) >> 1;
+          if (tr[mid].s <= s) lo = mid;
+          else hi = mid - 1;
+        }
+        const a = tr[lo];
+        const b = tr[(lo + 1) % tr.length];
+        const seg = lo === tr.length - 1 ? total - a.s : b.s - a.s;
+        const f = seg > 0 ? Math.max(0, Math.min(1, (s - a.s) / seg)) : 0;
+        return {
+          lat: a.lat + (b.lat - a.lat) * f,
+          lng: a.lng + (b.lng - a.lng) * f,
+          heading: reverse ? normDeg(a.heading + 180) : a.heading,
+        };
+      }
+
+      /** 거리별 시뮬레이션 도로 시나리오 (속도 km/h, 진동 G, 구간명) */
+      function getSimRoadProfile(sM, reverse) {
+        const s = ((sM % state.sim.totalLen) + state.sim.totalLen) % state.sim.totalLen;
+        let speedKmh = 54;
+        let vibG = 0.065;
+        let zone = '일반 도로';
+
+        if (s < 160) {
+          speedKmh = 28 + (s / 160) * 34;
+          vibG = 0.06;
+          zone = '직선 가속 구간';
+        } else if (s < 240) {
+          const d = Math.abs(s - 200);
+          if (d < 16) {
+            speedKmh = 20;
+            vibG = 0.45 - d * 0.012;
+            zone = '과속방지턱 #1';
+          } else {
+            speedKmh = 22 + (d - 16) * 1.15;
+            vibG = 0.095;
+            zone = '방지턱 #1 감속';
+          }
+        } else if (s < 520) {
+          speedKmh = 56 + Math.sin((s - 240) / 55) * 5;
+          vibG = 0.08;
+          zone = '완만 커브 순항';
+        } else if (s < 700) {
+          speedKmh = 44;
+          vibG = 0.25 + Math.sin(s * 0.4) * 0.04;
+          zone = '노면 불량 요철';
+        } else if (s < 930) {
+          if (s < 825) {
+            const p = (s - 700) / 125;
+            speedKmh = Math.max(7, 46 * (1 - p * 0.86));
+            vibG = 0.085;
+            zone = '교차로 급감속·정차';
+          } else {
+            const p = (s - 825) / 105;
+            speedKmh = 7 + p * 49;
+            vibG = 0.075;
+            zone = '교차로 재출발';
+          }
+        } else if (s < 1230) {
+          const p = (s - 930) / 300;
+          speedKmh = 56 + Math.sin(p * Math.PI) * 18;
+          vibG = 0.07;
+          zone = '대로변 직선 고속';
+        } else if (s < 1320) {
+          const d = Math.abs(s - 1275);
+          if (d < 15) {
+            speedKmh = 18;
+            vibG = 0.49 - d * 0.013;
+            zone = '과속방지턱 #2 (스쿨존)';
+          } else {
+            speedKmh = 20 + (d - 15) * 1.2;
+            vibG = 0.105;
+            zone = '스쿨존 진입 감속';
+          }
+        } else if (s < 1580) {
+          speedKmh = 41 + Math.cos((s - 1320) / 50) * 6;
+          vibG = 0.125;
+          zone = 'S자 커브 서행';
+        } else {
+          const p = (s - 1580) / 220;
+          speedKmh = 43 - p * 16;
+          vibG = 0.07;
+          zone = '도착지 감속';
+        }
+
+        if (reverse) {
+          speedKmh = Math.max(7, speedKmh * 0.88);
+          zone = `퇴근 · ${zone}`;
+        }
+        return { speedKmh, vibG, zone };
+      }
+
+      // =====================================================================
+      // 6. 방향성 분리 15m 공간 그리드 학습 데이터베이스
+      // =====================================================================
+      function gridKey(lat, lng) {
+        return `${Math.floor(lat / GRID_LAT_CELL)},${Math.floor(lng / GRID_LNG_CELL)}`;
+      }
+
+      function rebuildSpatialIndex() {
+        state.gridIndex.clear();
+        state.nodeMap.clear();
+        const nodes = state.db.nodes;
+        for (let i = 0; i < nodes.length; i++) {
+          const n = nodes[i];
+          state.nodeMap.set(n.id, n);
+          const k = gridKey(n.lat, n.lng);
+          if (!state.gridIndex.has(k)) state.gridIndex.set(k, []);
+          state.gridIndex.get(k).push(n);
+        }
+      }
+
+      function addNodeToIndex(node) {
+        state.nodeMap.set(node.id, node);
+        const k = gridKey(node.lat, node.lng);
+        if (!state.gridIndex.has(k)) state.gridIndex.set(k, []);
+        state.gridIndex.get(k).push(node);
+      }
+
+      /** 고속 3x3 그리드 근접 노드 검색 (진행 방위각 ±55° 분리) */
+      function queryNearbyNodes(lat, lng, heading, radiusM) {
+        const gx = Math.floor(lat / GRID_LAT_CELL);
+        const gy = Math.floor(lng / GRID_LNG_CELL);
+        const span = Math.max(1, Math.ceil(radiusM / 18));
+        const hits = [];
+
+        for (let dx = -span; dx <= span; dx++) {
+          for (let dy = -span; dy <= span; dy++) {
+            const bucket = state.gridIndex.get(`${gx + dx},${gy + dy}`);
+            if (!bucket) continue;
+            for (let i = 0; i < bucket.length; i++) {
+              const n = bucket[i];
+              if (heading !== null && angleDiff(n.heading, heading) > HEADING_TOL_DEG) continue;
+              const d = haversineM(lat, lng, n.lat, n.lng);
+              if (d <= radiusM) hits.push({ node: n, dist: d });
+            }
+          }
+        }
+        hits.sort((a, b) => a.dist - b.dist);
+        return hits;
+      }
+
+      function saveDb(force = false) {
+        const now = Date.now();
+        if (!force && now - lastDbSaveTs < 1400) return;
+        lastDbSaveTs = now;
+        try {
+          localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(state.db));
+        } catch (err) {
+          // 용량 초과 등 예외 안전 처리
+        }
+      }
+
+      function loadDb() {
+        try {
+          const raw = localStorage.getItem(DB_STORAGE_KEY);
+          if (raw) {
+            const p = JSON.parse(raw);
+            if (p && Array.isArray(p.nodes)) {
+              state.db = {
+                trips: Number(p.trips) || 0,
+                totalSamples: Number(p.totalSamples) || 0,
+                totalMeters: Number(p.totalMeters) || 0,
+                nextId: Number(p.nextId) || p.nodes.length + 1,
+                nodes: p.nodes,
+              };
+              rebuildSpatialIndex();
+            }
+          }
+        } catch (err) {
+          // 손상 데이터 무시
+        }
+      }
+
+      function saveSettings() {
+        try {
+          localStorage.setItem(CFG_STORAGE_KEY, JSON.stringify(state.settings));
+        } catch (e) { /* 무시 */ }
+      }
+
+      function loadSettings() {
+        try {
+          const raw = localStorage.getItem(CFG_STORAGE_KEY);
+          if (!raw) return;
+          const p = JSON.parse(raw);
+          if (p && typeof p === 'object') {
+            state.settings = { ...state.settings, ...p };
+          }
+        } catch (e) { /* 무시 */ }
+      }
+
+      /** 15m 단위 공간 노드 학습/병합 (누적평균 + 장기 EMA 적응) */
+      function learnSample(lat, lng, heading, speedKmh, accelMs2, vibG, labelHint = '') {
+        if (!state.settings.learningEnabled) return;
+
+        const tr = state.tracker;
+        if (tr.lastLat !== null && tr.lastLng !== null) {
+          const moved = haversineM(tr.lastLat, tr.lastLng, lat, lng);
+          if (moved < NODE_STEP_M) return;
+          tr.sessionMovedM += moved;
+          state.db.totalMeters += moved;
+          if (!tr.sessionTripAdded && tr.sessionMovedM >= 250) {
+            state.db.trips += 1;
+            tr.sessionTripAdded = true;
+          }
+        }
+
+        tr.lastLat = lat;
+        tr.lastLng = lng;
+
+        const nearby = queryNearbyNodes(lat, lng, heading, NODE_MERGE_RADIUS_M);
+        let node = nearby.length ? nearby[0].node : null;
+
+        if (node) {
+          const c = node.count;
+          const nc = c + 1;
+          // 15회 이하 누적평균, 이후 지수이동평균(alpha=0.08)로 노면 변화 반영
+          const alpha = c < 15 ? 1 / nc : 0.08;
+          node.count = nc;
+          node.lat = node.lat + (lat - node.lat) * Math.min(0.25, 1 / nc);
+          node.lng = node.lng + (lng - node.lng) * Math.min(0.25, 1 / nc);
+
+          const rad = toRad(heading);
+          node.hx = (node.hx || Math.sin(toRad(node.heading)) * c) + Math.sin(rad);
+          node.hy = (node.hy || Math.cos(toRad(node.heading)) * c) + Math.cos(rad);
+          node.heading = normDeg(toDeg(Math.atan2(node.hx, node.hy)));
+
+          node.avgSpeed = node.avgSpeed + (speedKmh - node.avgSpeed) * alpha;
+          node.maxSpeed = Math.max(node.maxSpeed || 0, speedKmh);
+          node.avgVib = node.avgVib + (vibG - node.avgVib) * alpha;
+          node.maxVib = Math.max(node.maxVib || 0, vibG);
+          node.avgAccel = node.avgAccel + (accelMs2 - node.avgAccel) * alpha;
+          node.minAccel = Math.min(node.minAccel ?? 0, accelMs2);
+          if (labelHint && !node.label) node.label = labelHint;
+          node.ts = Date.now();
+        } else {
+          const rad = toRad(heading);
+          node = {
+            id: `n${state.db.nextId++}`,
+            lat,
+            lng,
+            heading: normDeg(heading),
+            hx: Math.sin(rad),
+            hy: Math.cos(rad),
+            count: 1,
+            avgSpeed: speedKmh,
+            maxSpeed: speedKmh,
+            avgVib: vibG,
+            maxVib: vibG,
+            avgAccel: accelMs2,
+            minAccel: accelMs2,
+            next: {},
+            label: labelHint || '',
+            ts: Date.now(),
+          };
+          state.db.nodes.push(node);
+          addNodeToIndex(node);
+        }
+
+        // 방향성 그래프 링크 연결 (곡선 도로 추적용)
+        if (tr.lastNodeId && tr.lastNodeId !== node.id) {
+          const prev = state.nodeMap.get(tr.lastNodeId);
+          if (prev) {
+            const linkD = haversineM(prev.lat, prev.lng, node.lat, node.lng);
+            if (linkD >= 6 && linkD <= 65) {
+              if (!prev.next) prev.next = {};
+              prev.next[node.id] = (prev.next[node.id] || 0) + 1;
+            }
+          }
+        }
+
+        tr.lastNodeId = node.id;
+        state.db.totalSamples += 1;
+        saveDb(false);
+        updateStatsUI();
+      }
+
+      /** 샘플 출퇴근 5회분 데이터 즉시 생성 (실내/PC/모바일 즉시 테스트) */
+      function generateFiveSampleTrips() {
+        const prevLearn = state.settings.learningEnabled;
+        state.settings.learningEnabled = true;
+
+        const step = 15;
+        const total = state.sim.totalLen;
+        for (let run = 0; run < 5; run++) {
+          state.tracker.lastLat = null;
+          state.tracker.lastLng = null;
+          state.tracker.lastNodeId = null;
+          let prevSpdMs = 7.5;
+
+          for (let s = 0; s < total; s += step) {
+            const pt = sampleSimTrack(s, false);
+            const prof = getSimRoadProfile(s, false);
+            const speedKmh = Math.max(6, prof.speedKmh + (Math.random() - 0.5) * 4.2);
+            const speedMs = speedKmh / 3.6;
+            const dt = step / Math.max(2.2, (speedMs + prevSpdMs) / 2);
+            const accelMs2 = Math.max(-3.6, Math.min(2.8, (speedMs - prevSpdMs) / dt));
+            prevSpdMs = speedMs;
+            const vibG = Math.max(0.025, prof.vibG + (Math.random() - 0.5) * prof.vibG * 0.22);
+            const jLat = pt.lat + (Math.random() - 0.5) * 0.000016;
+            const jLng = pt.lng + (Math.random() - 0.5) * 0.000020;
+
+            learnSample(jLat, jLng, pt.heading, speedKmh, accelMs2, vibG, prof.zone);
+          }
+          // 순환 루프 마지막 -> 출발지 연결
+          const firstPt = sampleSimTrack(0, false);
+          const firstProf = getSimRoadProfile(0, false);
+          learnSample(firstPt.lat, firstPt.lng, firstPt.heading, firstProf.speedKmh, 0.2, firstProf.vibG, firstProf.zone);
+          state.db.trips += 1;
+        }
+
+        state.tracker.lastLat = null;
+        state.tracker.lastLng = null;
+        state.tracker.lastNodeId = null;
+        state.settings.learningEnabled = prevLearn;
+
+        rebuildSpatialIndex();
+        saveDb(true);
+        updateStatsUI();
+
+        const p0 = sampleSimTrack(state.sim.distM, state.sim.reverse);
+        state.vehicle.lat = p0.lat;
+        state.vehicle.lng = p0.lng;
+        state.vehicle.heading = p0.heading;
+        runPrediction();
+        showToast('출퇴근 5회분(9km) 학습 데이터를 불러왔습니다! 시작 버튼을 눌러보세요.', 'success');
+      }
+
+      // =====================================================================
+      // 7. 100m 전방 예측 엔진 (경로 추적 + 투영 좌표 결합 + 0~250m 프로파일)
+      // =====================================================================
+      function runPrediction() {
+        const v = state.vehicle;
+        const targetDist = state.lookaheadM;
+        const maxProfileM = 255;
+
+        if (!state.db.nodes.length) {
+          clearPrediction();
+          return;
+        }
+
+        const anchorHits = queryNearbyNodes(v.lat, v.lng, v.heading, 38);
+        const anchor = anchorHits.length ? anchorHits[0].node : null;
+        const anchorErr = anchorHits.length ? anchorHits[0].dist : 99;
+
+        const rawChain = [];
+        let targetPred = null;
+        let method = 'NONE';
+
+        if (anchor) {
+          const visited = new Set([anchor.id]);
+          let curr = anchor;
+          let cum = 0;
+
+          rawChain.push({
+            dist: 0,
+            speed: curr.avgSpeed,
+            vibG: curr.avgVib,
+            maxVibG: curr.maxVib,
+            accel: curr.avgAccel,
+            minAccel: curr.minAccel,
+            count: curr.count,
+            lat: curr.lat,
+            lng: curr.lng,
+            label: curr.label || '',
+          });
+
+          for (let step = 0; step < 26 && cum < maxProfileM + 20; step++) {
+            let nxt = null;
+            if (curr.next) {
+              let bestHits = -1;
+              for (const [nid, hits] of Object.entries(curr.next)) {
+                if (visited.has(nid)) continue;
+                const cand = state.nodeMap.get(nid);
+                if (cand && hits > bestHits) {
+                  bestHits = hits;
+                  nxt = cand;
+                }
+              }
+            }
+            // 링크 끊김 구간 -> 전방 원뿔(±52°, 8~44m) 자동 연결
+            if (!nxt) {
+              const cands = queryNearbyNodes(curr.lat, curr.lng, curr.heading, 44);
+              let bestScore = Infinity;
+              for (let i = 0; i < cands.length; i++) {
+                const { node: c, dist: d } = cands[i];
+                if (visited.has(c.id) || d < 8) continue;
+                const b = calcBearing(curr.lat, curr.lng, c.lat, c.lng);
+                const err = angleDiff(curr.heading, b);
+                if (err > 52) continue;
+                const score = d + err * 0.45;
+                if (score < bestScore) {
+                  bestScore = score;
+                  nxt = c;
+                }
+              }
+            }
+            if (!nxt) break;
+            cum += haversineM(curr.lat, curr.lng, nxt.lat, nxt.lng);
+            visited.add(nxt.id);
+            rawChain.push({
+              dist: cum,
+              speed: nxt.avgSpeed,
+              vibG: nxt.avgVib,
+              maxVibG: nxt.maxVib,
+              accel: nxt.avgAccel,
+              minAccel: nxt.minAccel,
+              count: nxt.count,
+              lat: nxt.lat,
+              lng: nxt.lng,
+              label: nxt.label || '',
+            });
+            curr = nxt;
+          }
+
+          if (rawChain.length >= 2 && rawChain[rawChain.length - 1].dist >= targetDist - 12) {
+            method = 'PATH';
+            targetPred = interpolateChainAt(rawChain, targetDist, anchorErr);
+          }
+        }
+
+        // 경로 추적 미도달 시 -> 전방 방위각 좌표 투영 Fallback
+        if (!targetPred) {
+          const proj = projectPoint(v.lat, v.lng, v.heading, targetDist);
+          const near = queryNearbyNodes(proj.lat, proj.lng, v.heading, 45);
+          if (near.length > 0) {
+            method = 'PROJECT';
+            let wS = 0, spd = 0, vib = 0, maxV = 0, acc = 0, minA = 0, cnt = 0, latS = 0, lngS = 0;
+            near.forEach(({ node: n, dist: d }) => {
+              const w = 1 / Math.max(3, d);
+              wS += w;
+              spd += n.avgSpeed * w;
+              vib += n.avgVib * w;
+              maxV = Math.max(maxV, n.maxVib);
+              acc += n.avgAccel * w;
+              minA = Math.min(minA, n.minAccel ?? n.avgAccel);
+              cnt += n.count;
+              latS += n.lat * w;
+              lngS += n.lng * w;
+            });
+            targetPred = {
+              speedKmh: spd / wS,
+              vibG: vib / wS,
+              maxVibG: maxV,
+              accelMs2: acc / wS,
+              minAccel: minA,
+              count: Math.round(cnt / near.length),
+              lat: latS / wS,
+              lng: lngS / wS,
+              matchErr: near[0].dist,
+            };
+          }
+        }
+
+        // 0 ~ 255m, 15m 간격 균일 프로파일 생성
+        const profile = [];
+        if (rawChain.length >= 2) {
+          const maxD = Math.min(maxProfileM, rawChain[rawChain.length - 1].dist);
+          for (let d = 0; d <= maxD; d += NODE_STEP_M) {
+            const pt = interpolateChainAt(rawChain, d, anchorErr);
+            if (pt) profile.push({ dist: d, ...pt });
+          }
+        }
+
+        if (!targetPred) {
+          clearPrediction(profile, rawChain);
+          return;
+        }
+
+        // 신뢰도(%) 산출
+        const cntScore = Math.min(1, Math.log2(targetPred.count + 1) / Math.log2(6));
+        const mBonus = method === 'PATH' ? 0.99 : 0.82;
+        const dPen = Math.max(0.75, 1 - targetPred.matchErr / 120);
+        const confidence = Math.round(Math.min(99, Math.max(35, (42 + 57 * cntScore) * mBonus * dPen)));
+
+        // 전방 목표 거리 ±22m 구간 위험 감지
+        let peakVib = targetPred.vibG;
+        let minAcc = targetPred.accelMs2;
+        for (let i = 0; i < rawChain.length; i++) {
+          const p = rawChain[i];
+          if (Math.abs(p.dist - targetDist) <= 22) {
+            if (p.vibG > peakVib) peakVib = p.vibG;
+            if (p.accel < minAcc) minAcc = p.accel;
+          }
+        }
+
+        const vibThr = state.settings.vibThresholdG;
+        const brkThr = state.settings.brakeThresholdMs2;
+        let warning = null;
+
+        if (peakVib >= vibThr) {
+          warning = {
+            key: `BUMP_${Math.round(targetDist / 50)}`,
+            severity: 'critical',
+            title: `${targetDist}m 전방 과속방지턱 · 강한 충격`,
+            sub: `예상 속도 ${targetPred.speedKmh.toFixed(0)} km/h · 미리 감속하세요`,
+            metric: `${peakVib.toFixed(2)} G`,
+          };
+        } else if (minAcc <= brkThr) {
+          warning = {
+            key: `BRAKE_${Math.round(targetDist / 50)}`,
+            severity: 'critical',
+            title: `${targetDist}m 전방 급감속 · 정차 구간`,
+            sub: `전방 감속 구간입니다 · 안전거리를 확보하세요`,
+            metric: `${minAcc.toFixed(1)} m/s²`,
+          };
+        } else if (peakVib >= vibThr * 0.72) {
+          warning = {
+            key: `ROUGH_${Math.round(targetDist / 50)}`,
+            severity: 'warn',
+            title: `${targetDist}m 전방 노면 거침 · 요철 주의`,
+            sub: `진동 증가 구간 · 속도를 조절하세요`,
+            metric: `${peakVib.toFixed(2)} G`,
+          };
+        }
+
+        // 경고음 + 진동 피드백 (주행 중 + 쿨다운 적용)
+        if (warning && state.isDriving) {
+          const now = Date.now();
+          if (warning.key !== state.lastWarnKey || now - state.lastWarnTime >= WARN_COOLDOWN_MS) {
+            triggerAlertFeedback(warning.severity);
+            state.lastWarnKey = warning.key;
+            state.lastWarnTime = now;
+          }
+        }
+
+        // 전방 250m 이내 주의 지점 요약 추출 (경로 레이더 탭용)
+        const upcomingHazards = [];
+        let lastHazardDist = -99;
+        for (let i = 1; i < rawChain.length; i++) {
+          const p = rawChain[i];
+          if (p.dist > 250) break;
+          if (p.dist - lastHazardDist < 30) continue;
+          if (p.vibG >= vibThr) {
+            upcomingHazards.push({ dist: Math.round(p.dist), kind: '충격/방지턱', cls: 'rose', val: `${p.vibG.toFixed(2)} G`, spd: `${p.speed.toFixed(0)} km/h`, label: p.label });
+            lastHazardDist = p.dist;
+          } else if (p.accel <= brkThr) {
+            upcomingHazards.push({ dist: Math.round(p.dist), kind: '급감속 구간', cls: 'amber', val: `${p.accel.toFixed(1)} m/s²`, spd: `${p.speed.toFixed(0)} km/h`, label: p.label });
+            lastHazardDist = p.dist;
+          } else if (p.vibG >= vibThr * 0.72) {
+            upcomingHazards.push({ dist: Math.round(p.dist), kind: '노면 요철', cls: 'amber', val: `${p.vibG.toFixed(2)} G`, spd: `${p.speed.toFixed(0)} km/h`, label: p.label });
+            lastHazardDist = p.dist;
+          }
+        }
+
+        state.pred = {
+          matched: true,
+          method,
+          speedKmh: targetPred.speedKmh,
+          accelMs2: targetPred.accelMs2,
+          vibG: targetPred.vibG,
+          maxVibG: targetPred.maxVibG,
+          minAccel: targetPred.minAccel,
+          count: targetPred.count,
+          confidence,
+          targetLat: targetPred.lat,
+          targetLng: targetPred.lng,
+          profile,
+          rawChain,
+          warning,
+          upcomingHazards,
+        };
+      }
+
+      function interpolateChainAt(chain, targetD, errM) {
+        if (!chain.length) return null;
+        let a = chain[chain.length - 1];
+        let b = a;
+        for (let i = 0; i < chain.length - 1; i++) {
+          if (chain[i].dist <= targetD && chain[i + 1].dist >= targetD) {
+            a = chain[i];
+            b = chain[i + 1];
+            break;
+          }
+        }
+        const span = b.dist - a.dist;
+        const t = span > 0.1 ? Math.max(0, Math.min(1, (targetD - a.dist) / span)) : 0;
+        return {
+          speedKmh: a.speed + (b.speed - a.speed) * t,
+          vibG: a.vibG + (b.vibG - a.vibG) * t,
+          maxVibG: Math.max(a.maxVibG, b.maxVibG),
+          accelMs2: a.accel + (b.accel - a.accel) * t,
+          minAccel: Math.min(a.minAccel, b.minAccel),
+          count: Math.round(a.count + (b.count - a.count) * t),
+          lat: a.lat + (b.lat - a.lat) * t,
+          lng: a.lng + (b.lng - a.lng) * t,
+          matchErr: errM,
+        };
+      }
+
+      function clearPrediction(profile = [], rawChain = []) {
+        state.pred = {
+          matched: false,
+          method: 'NONE',
+          speedKmh: null,
+          accelMs2: null,
+          vibG: null,
+          maxVibG: null,
+          minAccel: null,
+          count: 0,
+          confidence: 0,
+          targetLat: null,
+          targetLng: null,
+          profile,
+          rawChain,
+          warning: null,
+          upcomingHazards: [],
+        };
+      }
+
+      // =====================================================================
+      // 8. 실제 스마트폰 센서 엔진 (GPS + DeviceMotion + WakeLock + 영점보정)
+      // =====================================================================
+      function isSecureOrigin() {
+        return window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+      }
+
+      async function acquireWakeLock(silent = false) {
+        try {
+          if ('wakeLock' in navigator) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => {
+              wakeLock = null;
+              updateTopBarUI();
+            });
+            updateTopBarUI();
+            return true;
+          }
+        } catch (err) {
+          if (!silent) showToast('화면 꺼짐 방지는 브라우저가 활성화된 HTTPS 환경에서 지원됩니다.', 'warn');
+        }
+        return false;
+      }
+
+      async function releaseWakeLock() {
+        try {
+          if (wakeLock) {
+            await wakeLock.release();
+            wakeLock = null;
+            updateTopBarUI();
+          }
+        } catch (e) { /* 무시 */ }
+      }
+
+      // 앱 복귀 시(visibilitychange) 주행 중이면 Wake Lock 자동 재획득
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && state.isDriving && !wakeLock) {
+          acquireWakeLock(true);
+        }
+      });
+
+      /** DeviceMotionEvent (거치 각도 무관 중력 제거 + 영점 보정 -> G RMS) */
+      function onDeviceMotion(e) {
+        const acc = e.acceleration;
+        const accG = e.accelerationIncludingGravity;
+        let ax = 0, ay = 0, az = 0, ok = false;
+
+        if (acc && (acc.x !== null || acc.y !== null || acc.z !== null)) {
+          ax = acc.x || 0;
+          ay = acc.y || 0;
+          az = acc.z || 0;
+          ok = true;
+        } else if (accG && (accG.x !== null || accG.y !== null || accG.z !== null)) {
+          const alpha = 0.85;
+          const g = state.imu.gravity;
+          g.x = alpha * g.x + (1 - alpha) * (accG.x || 0);
+          g.y = alpha * g.y + (1 - alpha) * (accG.y || 0);
+          g.z = alpha * g.z + (1 - alpha) * (accG.z || 0);
+          ax = (accG.x || 0) - g.x;
+          ay = (accG.y || 0) - g.y;
+          az = (accG.z || 0) - g.z;
+          ok = true;
+        }
+        if (!ok) return;
+
+        // 프레임 간 3축 변화량 크기 -> 거치 각도와 완전히 무관한 진동 강도(G)
+        const prev = state.imu.prevLin;
+        const magMs2 = Math.hypot(ax - prev.x, ay - prev.y, az - prev.z);
+        prev.x = ax; prev.y = ay; prev.z = az;
+
+        const gInstant = magMs2 / G_UNIT;
+        const win = state.imu.winG;
+        win.push(gInstant);
+        if (win.length > 14) win.shift();
+        let sumSq = 0;
+        for (let i = 0; i < win.length; i++) sumSq += win[i] * win[i];
+        const rawG = Math.sqrt(sumSq / win.length);
+        state.imu.rawVibG = rawG;
+
+        if (state.imu.calibrating) {
+          state.imu.calibSamples.push(rawG);
+        }
+
+        if (state.mode === 'real' && state.isDriving) {
+          state.vehicle.vibG = Math.max(0, rawG - state.settings.imuZeroOffsetG);
+          state.vehicle.imuOk = true;
+        }
+      }
+
+      /** Geolocation watchPosition 콜백 (speed/heading null 자동 보정 + dv/dt 가속도) */
+      function onGeoSuccess(pos) {
+        if (state.mode !== 'real' || !state.isDriving) return;
+        const { latitude, longitude, accuracy, speed, heading } = pos.coords;
+        const now = pos.timestamp || Date.now();
+
+        let speedMs = 0;
+        let calcHeading = state.vehicle.heading;
+        let accelMs2 = state.vehicle.accelMs2;
+
+        if (state.prevGps) {
+          const dt = (now - state.prevGps.ts) / 1000;
+          const moved = haversineM(state.prevGps.lat, state.prevGps.lng, latitude, longitude);
+
+          if (typeof speed === 'number' && !Number.isNaN(speed) && speed >= 0) {
+            speedMs = speed;
+          } else if (dt >= 0.35) {
+            const gate = Math.min(3.5, (accuracy || 6) * 0.28);
+            const rawSpd = moved > gate ? moved / dt : 0;
+            speedMs = rawSpd < 85 ? rawSpd : state.vehicle.speedMs;
+          } else {
+            speedMs = state.vehicle.speedMs;
+          }
+
+          if (typeof heading === 'number' && !Number.isNaN(heading) && speedMs > 1.2) {
+            calcHeading = normDeg(heading);
+          } else if (moved >= 2.5) {
+            calcHeading = calcBearing(state.prevGps.lat, state.prevGps.lng, latitude, longitude);
+          }
+
+          if (dt >= 0.25) {
+            const rawA = Math.max(-6.5, Math.min(5.5, (speedMs - state.prevGps.speedMs) / dt));
+            accelMs2 = state.vehicle.accelMs2 * 0.5 + rawA * 0.5;
+          }
+        } else {
+          if (typeof speed === 'number' && !Number.isNaN(speed) && speed >= 0) speedMs = speed;
+          if (typeof heading === 'number' && !Number.isNaN(heading)) calcHeading = normDeg(heading);
+        }
+
+        state.prevGps = { lat: latitude, lng: longitude, speedMs, ts: now };
+
+        state.vehicle.lat = latitude;
+        state.vehicle.lng = longitude;
+        state.vehicle.accuracy = accuracy;
+        state.vehicle.speedMs = speedMs;
+        state.vehicle.speedKmh = speedMs * 3.6;
+        state.vehicle.heading = calcHeading;
+        state.vehicle.accelMs2 = accelMs2;
+        state.vehicle.gpsOk = true;
+        state.vehicle.timestamp = now;
+
+        el.httpsWarnBanner.classList.add('hidden');
+        learnSample(latitude, longitude, calcHeading, state.vehicle.speedKmh, accelMs2, state.vehicle.vibG);
+        runPrediction();
+        updateTopBarUI();
+      }
+
+      function onGeoError(err) {
+        if (state.mode !== 'real') return;
+        state.vehicle.gpsOk = false;
+        updateTopBarUI();
+        let msg = 'GPS 신호를 수신할 수 없습니다.';
+        if (!isSecureOrigin()) {
+          msg = '현재 file:// 또는 HTTP 환경이라 GPS가 차단되었습니다. HTTPS 호스팅 후 실행하거나 시뮬레이션을 이용하세요.';
+        } else if (err.code === 1) {
+          msg = '위치 권한이 거부되었습니다. 브라우저 설정에서 위치 권한을 허용해 주세요.';
+        } else if (err.code === 2) {
+          msg = '실내 또는 GPS 신호 미약 상태입니다. 야외에서 시도하거나 시뮬레이션을 이용하세요.';
+        } else if (err.code === 3) {
+          msg = 'GPS 응답 시간이 초과되었습니다.';
+        }
+        el.httpsWarnMsg.textContent = msg;
+        el.httpsWarnBanner.classList.remove('hidden');
+      }
+
+      /** 원터치 센서 권한 일괄 점검 (설정 탭) */
+      async function runBatchSensorCheck() {
+        const setDiag = (node, txt, cls) => {
+          node.textContent = txt;
+          node.className = `diag-state ${cls}`;
+        };
+
+        // 1) 오디오 & 진동 점검
+        try {
+          triggerAlertFeedback('warn');
+          const hasVib = typeof navigator.vibrate === 'function';
+          setDiag(el.diagAudio, hasVib ? '오디오·진동 정상' : '오디오 정상 (iOS 진동 미지원)', 'ok');
+        } catch (e) {
+          setDiag(el.diagAudio, '제한됨', 'warn');
+        }
+
+        // 2) Wake Lock 점검
+        if ('wakeLock' in navigator) {
+          const ok = await acquireWakeLock(true);
+          if (ok) {
+            setDiag(el.diagWake, '지원 · 활성 가능', 'ok');
+            if (!state.isDriving) releaseWakeLock();
+          } else {
+            setDiag(el.diagWake, '지원 (HTTPS 필요)', 'warn');
+          }
+        } else {
+          setDiag(el.diagWake, '브라우저 미지원', 'warn');
+        }
+
+        // 3) iOS 13+ 포함 가속도계(IMU) 권한 점검
+        if (typeof DeviceMotionEvent === 'undefined') {
+          setDiag(el.diagImu, '기기 미지원', 'err');
+        } else if (typeof DeviceMotionEvent.requestPermission === 'function') {
+          try {
+            const res = await DeviceMotionEvent.requestPermission();
+            if (res === 'granted') {
+              window.addEventListener('devicemotion', onDeviceMotion);
+              setDiag(el.diagImu, 'iOS 권한 허용됨', 'ok');
+            } else {
+              setDiag(el.diagImu, '권한 거부됨', 'err');
+            }
+          } catch (e) {
+            setDiag(el.diagImu, 'HTTPS 환경 필요', 'warn');
+          }
+        } else {
+          window.addEventListener('devicemotion', onDeviceMotion);
+          setDiag(el.diagImu, isSecureOrigin() ? '수신 대기/정상' : 'HTTPS 필요', isSecureOrigin() ? 'ok' : 'warn');
+        }
+
+        // 4) GPS 위치 권한 점검
+        if (!('geolocation' in navigator)) {
+          setDiag(el.diagGps, '미지원 브라우저', 'err');
+        } else if (!isSecureOrigin()) {
+          setDiag(el.diagGps, '차단됨 (HTTPS 필요)', 'err');
+        } else {
+          setDiag(el.diagGps, '수신 확인 중...', 'warn');
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              const acc = pos.coords.accuracy ? `±${Math.round(pos.coords.accuracy)}m` : '정상';
+              setDiag(el.diagGps, `정상 (${acc})`, 'ok');
+            },
+            (err) => {
+              setDiag(el.diagGps, err.code === 1 ? '권한 거부됨' : '신호 약함/실내', 'err');
+            },
+            { enableHighAccuracy: true, timeout: 7000 }
+          );
+        }
+
+        showToast('센서 권한 일괄 점검을 실행했습니다.', 'info');
+      }
+
+      /** 거치대 영점 보정 (2초간 정차 노이즈 측정 후 저장) */
+      async function calibrateMountZero() {
+        if (state.imu.calibrating) return;
+        // iOS 권한 필요 시 먼저 요청
+        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+          try {
+            await DeviceMotionEvent.requestPermission();
+          } catch (e) { /* 무시 */ }
+        }
+        window.addEventListener('devicemotion', onDeviceMotion);
+        state.imu.calibrating = true;
+        state.imu.calibSamples = [];
+        el.btnCalibrateImu.textContent = '보정 측정 중... (2초)';
+        el.btnCalibrateImu.disabled = true;
+
+        setTimeout(() => {
+          state.imu.calibrating = false;
+          el.btnCalibrateImu.textContent = '거치대 영점 보정 (2초)';
+          el.btnCalibrateImu.disabled = false;
+
+          const arr = state.imu.calibSamples;
+          if (arr.length >= 3) {
+            const avg = arr.reduce((s, v) => s + v, 0) / arr.length;
+            state.settings.imuZeroOffsetG = Math.min(0.15, Number(avg.toFixed(3)));
+            saveSettings();
+            el.valZeroOffset.textContent = `${state.settings.imuZeroOffsetG.toFixed(3)} G`;
+            showToast(`거치대 영점 보정 완료 (기준 노이즈 ${state.settings.imuZeroOffsetG.toFixed(3)} G 제거)`, 'success');
+          } else {
+            state.settings.imuZeroOffsetG = 0.0;
+            saveSettings();
+            el.valZeroOffset.textContent = '0.000 G';
+            showToast('센서 입력이 없어 영점을 0.000 G로 초기화했습니다. (실제 스마트폰에서 실행하세요)', 'warn');
+          }
+        }, 2000);
+      }
+
+      // =====================================================================
+      // 9. 가상 출퇴근 시뮬레이션 루프
+      // =====================================================================
+      function startSimLoop() {
+        stopSimLoop();
+        state.vehicle.gpsOk = true;
+        state.vehicle.imuOk = true;
+        updateTopBarUI();
+
+        const dtReal = 0.05;
+        simTimerId = setInterval(() => {
+          if (!state.isDriving || state.mode !== 'sim') return;
+          const dt = dtReal * state.sim.speedMult;
+          const prof = getSimRoadProfile(state.sim.distM, state.sim.reverse);
+
+          const targetMs = prof.speedKmh / 3.6;
+          const maxStep = 3.2 * dt;
+          const step = Math.max(-maxStep, Math.min(maxStep, (targetMs - state.sim.lastSpeedMs) * 1.45 * dt));
+          const speedMs = Math.max(1.8, state.sim.lastSpeedMs + step);
+          const accelMs2 = Math.max(-4.0, Math.min(3.2, (speedMs - state.sim.lastSpeedMs) / dt));
+          state.sim.lastSpeedMs = speedMs;
+
+          const deltaM = speedMs * dt;
+          state.sim.distM += state.sim.reverse ? -deltaM : deltaM;
+
+          if (!state.sim.reverse && state.sim.distM >= state.sim.totalLen) {
+            state.sim.distM -= state.sim.totalLen;
+            if (state.settings.learningEnabled) {
+              state.db.trips += 1;
+              saveDb(true);
+              updateStatsUI();
+              showToast(`출근 코스 1회 완주! (누적 ${state.db.trips}회 학습)`, 'success');
+            }
+          } else if (state.sim.reverse && state.sim.distM < 0) {
+            state.sim.distM += state.sim.totalLen;
+            if (state.settings.learningEnabled) {
+              state.db.trips += 1;
+              saveDb(true);
+              updateStatsUI();
+              showToast(`퇴근 코스 1회 완주! (누적 ${state.db.trips}회 학습)`, 'success');
+            }
+          }
+
+          const pt = sampleSimTrack(state.sim.distM, state.sim.reverse);
+          const vibG = Math.max(0.02, prof.vibG + (Math.random() - 0.5) * prof.vibG * 0.24);
+
+          state.vehicle.lat = pt.lat;
+          state.vehicle.lng = pt.lng;
+          state.vehicle.heading = pt.heading;
+          state.vehicle.speedMs = speedMs;
+          state.vehicle.speedKmh = speedMs * 3.6;
+          state.vehicle.accelMs2 = accelMs2;
+          state.vehicle.vibG = vibG;
+          state.vehicle.timestamp = Date.now();
+          state.sim.zoneLabel = prof.zone;
+
+          learnSample(pt.lat, pt.lng, pt.heading, state.vehicle.speedKmh, accelMs2, vibG, prof.zone);
+          runPrediction();
+        }, 50);
+      }
+
+      function stopSimLoop() {
+        if (simTimerId) {
+          clearInterval(simTimerId);
+          simTimerId = null;
+        }
+      }
+
+      // =====================================================================
+      // 10. 주행 시작 / 일시정지 & 모드 전환
+      // =====================================================================
+      async function startDriving() {
+        if (state.isDriving) return;
+        state.isDriving = true;
+        state.tracker.lastLat = null;
+        state.tracker.lastLng = null;
+        state.tracker.lastNodeId = null;
+        state.tracker.sessionMovedM = 0;
+        state.tracker.sessionTripAdded = false;
+        state.lastWarnKey = '';
+
+        // 사용자 클릭 제스처 안에서 AudioContext 사전 잠금 해제
+        try {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (AC && !audioCtx) audioCtx = new AC();
+          if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        } catch (e) { /* 무시 */ }
+
+        await acquireWakeLock(true);
+
+        if (state.mode === 'sim') {
+          el.httpsWarnBanner.classList.add('hidden');
+          startSimLoop();
+        } else {
+          if (!isSecureOrigin()) {
+            el.httpsWarnMsg.textContent = '비보안 환경(file:///HTTP)에서는 GPS/가속도 센서가 차단됩니다. HTTPS로 접속하거나 시뮬레이션을 이용하세요.';
+            el.httpsWarnBanner.classList.remove('hidden');
+          }
+          if ('geolocation' in navigator) {
+            geoWatchId = navigator.geolocation.watchPosition(onGeoSuccess, onGeoError, {
+              enableHighAccuracy: true,
+              maximumAge: 500,
+              timeout: 10000,
+            });
+          } else {
+            onGeoError({ code: 2 });
+          }
+          if (typeof DeviceMotionEvent !== 'undefined') {
+            if (typeof DeviceMotionEvent.requestPermission === 'function') {
+              try {
+                const res = await DeviceMotionEvent.requestPermission();
+                if (res === 'granted') window.addEventListener('devicemotion', onDeviceMotion);
+              } catch (e) {
+                showToast('iOS 가속도계 권한이 필요합니다. 설정 탭에서 점검을 눌러주세요.', 'warn');
+              }
+            } else {
+              window.addEventListener('devicemotion', onDeviceMotion);
+            }
+          }
+        }
+
+        updateDriveBtnUI();
+        updateTopBarUI();
+      }
+
+      function pauseDriving() {
+        if (!state.isDriving) return;
+        state.isDriving = false;
+        stopSimLoop();
+        if (geoWatchId !== null && 'geolocation' in navigator) {
+          navigator.geolocation.clearWatch(geoWatchId);
+          geoWatchId = null;
+        }
+        window.removeEventListener('devicemotion', onDeviceMotion);
+        releaseWakeLock();
+        saveDb(true);
+        updateDriveBtnUI();
+        updateTopBarUI();
+      }
+
+      async function setMode(nextMode) {
+        if (state.mode === nextMode) return;
+        const wasDriving = state.isDriving;
+        if (wasDriving) pauseDriving();
+
+        state.mode = nextMode;
+        state.prevGps = null;
+        el.httpsWarnBanner.classList.add('hidden');
+
+        if (nextMode === 'real' && !isSecureOrigin()) {
+          el.httpsWarnMsg.textContent = '현재 file:// 또는 HTTP 접속 중입니다. 실제 GPS/가속도계는 HTTPS 주소에서만 작동합니다.';
+          el.httpsWarnBanner.classList.remove('hidden');
+        }
+
+        updateTopBarUI();
+        showToast(nextMode === 'sim' ? '시뮬레이션 모드로 전환했습니다.' : '실제 스마트폰 센서 모드로 전환했습니다.', 'info');
+        if (wasDriving) await startDriving();
+      }
+
+      // =====================================================================
+      // 11. 캔버스 렌더링: (1) 미니 프로파일, (2) 경로 레이더, (3) 0~250m 상세
+      // =====================================================================
+      function resizeCanvasToParent(canvas, wrap) {
+        if (!canvas || !wrap) return;
+        const rect = wrap.getBoundingClientRect();
+        if (rect.width < 2 || rect.height < 2) return;
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const nw = Math.floor(rect.width * dpr);
+        const nh = Math.floor(rect.height * dpr);
+        if (canvas.width !== nw || canvas.height !== nh) {
+          canvas.width = nw;
+          canvas.height = nh;
+        }
+      }
+
+      function resizeAllCanvases() {
+        resizeCanvasToParent(el.miniCanvas, el.miniCanvasWrap);
+        resizeCanvasToParent(el.radarCanvas, el.radarStage);
+        resizeCanvasToParent(el.detailCanvas, el.detailChartStage);
+      }
+
+      /** (1) HUD 탭: 컴팩트 0~200m 전방 프로파일 미니 차트 */
+      function drawMiniProfile() {
+        const canvas = el.miniCanvas;
+        const ctx = canvas.getContext('2d');
+        if (!ctx || canvas.width < 4) return;
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const w = canvas.width / dpr;
+        const h = canvas.height / dpr;
+
+        ctx.save();
+        ctx.scale(dpr, dpr);
+        ctx.fillStyle = '#030710';
+        ctx.fillRect(0, 0, w, h);
+
+        const padL = 26, padR = 10, padT = 16, padB = 18;
+        const pw = Math.max(10, w - padL - padR);
+        const ph = Math.max(10, h - padT - padB);
+        const maxD = Math.max(200, state.lookaheadM);
+        const xOf = (d) => padL + (Math.min(maxD, Math.max(0, d)) / maxD) * pw;
+
+        // 격자 & 거리 눈금
+        ctx.strokeStyle = 'rgba(51, 65, 85, 0.35)';
+        ctx.lineWidth = 1;
+        ctx.font = '9.5px ui-monospace, monospace';
+        ctx.fillStyle = '#64748b';
+        [0, 50, 100, 150, 200].forEach((d) => {
+          if (d > maxD) return;
+          const x = xOf(d);
+          ctx.beginPath();
+          ctx.moveTo(x, padT);
+          ctx.lineTo(x, padT + ph);
+          ctx.stroke();
+          ctx.textAlign = 'center';
+          ctx.fillText(`${d}m`, x, h - 5);
+        });
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#10b981';
+        ctx.fillText('80', padL - 4, padT + 4);
+        ctx.fillText('40', padL - 4, padT + ph * 0.5 + 3);
+        ctx.fillText('0', padL - 4, padT + ph + 2);
+
+        const prof = state.pred.profile;
+
+        // 진동 강도 바 (색상 코드)
+        if (prof.length >= 2) {
+          const barW = Math.max(4, (pw / (maxD / NODE_STEP_M)) * 0.52);
+          for (let i = 0; i < prof.length; i++) {
+            const p = prof[i];
+            if (p.dist > maxD) break;
+            const x = xOf(p.dist);
+            const normV = Math.min(1, p.vibG / 0.55);
+            const bh = Math.max(2, normV * ph * 0.85);
+            const cls = classifyVibG(p.vibG);
+            ctx.fillStyle = cls.level >= 4 ? 'rgba(244,63,94,0.75)' : cls.level === 3 ? 'rgba(245,158,11,0.68)' : cls.level === 2 ? 'rgba(34,211,238,0.35)' : 'rgba(16,185,129,0.22)';
+            ctx.fillRect(x - barW / 2, padT + ph - bh, barW, bh);
+          }
+
+          // 예상 속도 곡선 (에메랄드)
+          ctx.strokeStyle = '#10b981';
+          ctx.lineWidth = 2.2;
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          let started = false;
+          for (let i = 0; i < prof.length; i++) {
+            if (prof[i].dist > maxD) break;
+            const x = xOf(prof[i].dist);
+            const y = padT + ph - Math.min(1, prof[i].speedKmh / 85) * ph;
+            if (!started) { ctx.moveTo(x, y); started = true; }
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = '#64748b';
+          ctx.font = '11px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('학습 데이터가 쌓이면 전방 속도·진동 프로파일이 표시됩니다', w / 2, h / 2 + 2);
+        }
+
+        // 선택된 예측 거리 수직 마커
+        const tx = xOf(state.lookaheadM);
+        ctx.save();
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(tx, padT);
+        ctx.lineTo(tx, padT + ph);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#f59e0b';
+        ctx.fillRect(tx - 20, 2, 40, 12);
+        ctx.fillStyle = '#02060e';
+        ctx.font = 'bold 9.5px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${state.lookaheadM}m`, tx, 11);
+        ctx.restore();
+
+        ctx.restore();
+      }
+
+      /** (2) 경로 레이더 탭: 학습 히트맵 레이더 */
+      function drawRadar() {
+        const canvas = el.radarCanvas;
+        const ctx = canvas.getContext('2d');
+        if (!ctx || canvas.width < 4) return;
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const w = canvas.width / dpr;
+        const h = canvas.height / dpr;
+
+        ctx.save();
+        ctx.scale(dpr, dpr);
+        ctx.fillStyle = '#030710';
+        ctx.fillRect(0, 0, w, h);
+
+        const cx = w / 2;
+        const cy = state.radar.headingUp ? h * 0.65 : h * 0.5;
+        const radM = state.radar.radiusM;
+        const pxPerM = (Math.min(w, h) * 0.48) / radM;
+        el.radarScaleTag.textContent = `반경 ${radM}m`;
+        el.radarDistTag.textContent = `${state.lookaheadM}m`;
+
+        // 거리 동심원
+        [state.lookaheadM, state.lookaheadM * 2].forEach((rM, idx) => {
+          const rPx = rM * pxPerM;
+          ctx.save();
+          ctx.strokeStyle = idx === 0 ? 'rgba(245, 158, 11, 0.45)' : 'rgba(51, 65, 85, 0.45)';
+          ctx.lineWidth = 1;
+          if (idx === 0) ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.arc(cx, cy, rPx, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+          ctx.fillStyle = idx === 0 ? '#f59e0b' : '#64748b';
+          ctx.font = '9.5px ui-monospace, monospace';
+          ctx.textAlign = 'left';
+          ctx.fillText(`${rM}m`, cx + 4, cy - rPx + 10);
+        });
+
+        // 십자선
+        ctx.strokeStyle = 'rgba(30, 41, 59, 0.7)';
+        ctx.beginPath();
+        ctx.moveTo(cx, 0); ctx.lineTo(cx, h);
+        ctx.moveTo(0, cy); ctx.lineTo(w, cy);
+        ctx.stroke();
+
+        const v = state.vehicle;
+        const rot = state.radar.headingUp ? -toRad(v.heading) : 0;
+        const cR = Math.cos(rot), sR = Math.sin(rot);
+        const toScr = (lat, lng) => {
+          const p = toLocalXY(lat, lng, v.lat, v.lng);
+          return {
+            x: cx + (p.x * cR - p.y * sR) * pxPerM,
+            y: cy - (p.x * sR + p.y * cR) * pxPerM,
+          };
+        };
+
+        // 나침반 N
+        const nAng = state.radar.headingUp ? -toRad(v.heading) : 0;
+        ctx.fillStyle = 'rgba(12, 20, 36, 0.9)';
+        ctx.beginPath();
+        ctx.arc(w - 24, 24, 15, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(148,163,184,0.35)';
+        ctx.stroke();
+        ctx.fillStyle = '#f43f5e';
+        ctx.font = 'bold 10px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('N', w - 24 + Math.sin(nAng) * 9, 24 - Math.cos(nAng) * 9 + 3.5);
+
+        // 노드 컬러 매핑
+        const nodeColor = (n, sameDir) => {
+          const a = sameDir ? 0.95 : 0.22;
+          if (state.radar.metric === 'vib') {
+            const c = classifyVibG(n.avgVib);
+            if (c.level === 4) return `rgba(244,63,94,${a})`;
+            if (c.level === 3) return `rgba(245,158,11,${a})`;
+            if (c.level === 2) return `rgba(34,211,238,${a})`;
+            return `rgba(16,185,129,${a})`;
+          }
+          if (state.radar.metric === 'speed') {
+            if (n.avgSpeed < 24) return `rgba(244,63,94,${a})`;
+            if (n.avgSpeed < 42) return `rgba(245,158,11,${a})`;
+            if (n.avgSpeed < 58) return `rgba(34,211,238,${a})`;
+            return `rgba(16,185,129,${a})`;
+          }
+          // accel
+          if (n.avgAccel <= state.settings.brakeThresholdMs2) return `rgba(244,63,94,${a})`;
+          if (n.avgAccel <= -0.45) return `rgba(245,158,11,${a})`;
+          if (n.avgAccel >= 0.55) return `rgba(16,185,129,${a})`;
+          return `rgba(34,211,238,${a})`;
+        };
+
+        const nodes = state.db.nodes;
+        for (let i = 0; i < nodes.length; i++) {
+          const n = nodes[i];
+          const p1 = toScr(n.lat, n.lng);
+          if (p1.x < -50 || p1.x > w + 50 || p1.y < -50 || p1.y > h + 50) continue;
+          const same = angleDiff(n.heading, v.heading) <= HEADING_TOL_DEG;
+          const col = nodeColor(n, same);
+
+          if (n.next) {
+            for (const nid of Object.keys(n.next)) {
+              const nxt = state.nodeMap.get(nid);
+              if (!nxt) continue;
+              const p2 = toScr(nxt.lat, nxt.lng);
+              ctx.strokeStyle = col;
+              ctx.lineWidth = same ? 4.5 : 2;
+              ctx.lineCap = 'round';
+              ctx.beginPath();
+              ctx.moveTo(p1.x, p1.y);
+              ctx.lineTo(p2.x, p2.y);
+              ctx.stroke();
+            }
+          }
+          ctx.fillStyle = col;
+          ctx.beginPath();
+          ctx.arc(p1.x, p1.y, same ? 3 : 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 전방 타겟 마커
+        const tGeo = state.pred.matched && state.pred.targetLat !== null
+          ? { lat: state.pred.targetLat, lng: state.pred.targetLng }
+          : projectPoint(v.lat, v.lng, v.heading, state.lookaheadM);
+        const tp = toScr(tGeo.lat, tGeo.lng);
+        const pulse = 8 + Math.sin(Date.now() / 220) * 3;
+        ctx.strokeStyle = state.pred.warning ? '#f43f5e' : '#f59e0b';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(tp.x, tp.y, pulse, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = state.pred.warning ? '#f43f5e' : '#f59e0b';
+        ctx.beginPath();
+        ctx.arc(tp.x, tp.y, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 현재 차량 아이콘
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(state.radar.headingUp ? 0 : toRad(v.heading));
+        ctx.fillStyle = '#22d3ee';
+        ctx.shadowColor = '#22d3ee';
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.moveTo(0, -11);
+        ctx.lineTo(8, 9);
+        ctx.lineTo(0, 5);
+        ctx.lineTo(-8, 9);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        ctx.restore();
+      }
+
+      /** (3) 경로 레이더 탭: 0 ~ 250m 상세 도로 프로파일 차트 */
+      function drawDetailProfile() {
+        const canvas = el.detailCanvas;
+        const ctx = canvas.getContext('2d');
+        if (!ctx || canvas.width < 4) return;
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const w = canvas.width / dpr;
+        const h = canvas.height / dpr;
+
+        ctx.save();
+        ctx.scale(dpr, dpr);
+        ctx.fillStyle = '#030710';
+        ctx.fillRect(0, 0, w, h);
+
+        const padL = 34, padR = 36, padT = 20, padB = 22;
+        const pw = Math.max(10, w - padL - padR);
+        const ph = Math.max(10, h - padT - padB);
+        const maxD = 250;
+        const xOf = (d) => padL + (Math.min(maxD, Math.max(0, d)) / maxD) * pw;
+
+        // 수평 눈금
+        ctx.strokeStyle = 'rgba(51, 65, 85, 0.35)';
+        ctx.lineWidth = 1;
+        ctx.font = '9.5px ui-monospace, monospace';
+        for (let i = 0; i <= 4; i++) {
+          const y = padT + (ph / 4) * i;
+          ctx.beginPath();
+          ctx.moveTo(padL, y);
+          ctx.lineTo(padL + pw, y);
+          ctx.stroke();
+
+          ctx.fillStyle = '#10b981';
+          ctx.textAlign = 'right';
+          ctx.fillText(String(80 - i * 20), padL - 5, y + 3);
+
+          ctx.fillStyle = '#f43f5e';
+          ctx.textAlign = 'left';
+          ctx.fillText((0.6 - i * 0.15).toFixed(2), padL + pw + 5, y + 3);
+        }
+
+        // 수직 거리 눈금
+        ctx.fillStyle = '#64748b';
+        ctx.textAlign = 'center';
+        [0, 50, 100, 150, 200, 250].forEach((d) => {
+          const x = xOf(d);
+          ctx.strokeStyle = 'rgba(51,65,85,0.22)';
+          ctx.beginPath();
+          ctx.moveTo(x, padT);
+          ctx.lineTo(x, padT + ph);
+          ctx.stroke();
+          ctx.fillText(`${d}m`, x, h - 6);
+        });
+
+        ctx.fillStyle = '#10b981'; ctx.textAlign = 'left'; ctx.fillText('km/h', 4, 12);
+        ctx.fillStyle = '#f43f5e'; ctx.textAlign = 'right'; ctx.fillText('G', w - 6, 12);
+
+        const prof = state.pred.profile;
+        if (prof.length >= 2) {
+          // 위험 구간 음영
+          for (let i = 0; i < prof.length - 1; i++) {
+            const p1 = prof[i], p2 = prof[i + 1];
+            const isBump = p1.vibG >= state.settings.vibThresholdG || p2.vibG >= state.settings.vibThresholdG;
+            const isBrk = p1.accelMs2 <= state.settings.brakeThresholdMs2 || p2.accelMs2 <= state.settings.brakeThresholdMs2;
+            if (isBump || isBrk) {
+              ctx.fillStyle = isBump ? 'rgba(244,63,94,0.18)' : 'rgba(245,158,11,0.16)';
+              ctx.fillRect(xOf(p1.dist), padT, Math.max(2, xOf(p2.dist) - xOf(p1.dist)), ph);
+            }
+          }
+
+          const drawLine = (fn, col, lw) => {
+            ctx.strokeStyle = col;
+            ctx.lineWidth = lw;
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            prof.forEach((p, idx) => {
+              const x = xOf(p.dist);
+              const y = padT + ph - Math.max(0, Math.min(1, fn(p))) * ph;
+              if (idx === 0) ctx.moveTo(x, y);
+              else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+          };
+
+          if (state.detailSeries.speed) drawLine((p) => p.speedKmh / 80, '#10b981', 2.2);
+          if (state.detailSeries.accel) drawLine((p) => (p.accelMs2 + 3) / 6, '#22d3ee', 1.8);
+          if (state.detailSeries.vib) drawLine((p) => p.vibG / 0.6, '#f43f5e', 2.4);
+        } else {
+          ctx.fillStyle = '#64748b';
+          ctx.font = '11.5px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('전방 학습 경로를 탐색 중입니다', w / 2, h / 2);
+        }
+
+        // 예측 지점 마커
+        const tx = xOf(state.lookaheadM);
+        ctx.save();
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(tx, padT);
+        ctx.lineTo(tx, padT + ph);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#f59e0b';
+        ctx.fillRect(tx - 21, 2, 42, 13);
+        ctx.fillStyle = '#02060e';
+        ctx.font = 'bold 9.5px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${state.lookaheadM}m`, tx, 11.5);
+        ctx.restore();
+
+        ctx.restore();
+      }
+
+      // =====================================================================
+      // 12. UI 동기화 & 60fps HUD 렌더링 루프
+      // =====================================================================
+      function updateTopBarUI() {
+        el.btnModeSim.className = state.mode === 'sim' ? 'seg-btn active-sim' : 'seg-btn';
+        el.btnModeReal.className = state.mode === 'real' ? 'seg-btn active-real' : 'seg-btn';
+        el.simInlineBar.classList.toggle('hidden', state.mode !== 'sim');
+
+        if (state.mode === 'sim') {
+          el.pillGps.className = state.isDriving ? 'status-pill sim' : 'status-pill';
+          el.txtGps.textContent = state.isDriving ? `SIM ${state.sim.speedMult}x` : 'SIM 대기';
+        } else if (state.vehicle.gpsOk) {
+          el.pillGps.className = 'status-pill ok';
+          const acc = state.vehicle.accuracy ? `±${Math.round(state.vehicle.accuracy)}m` : 'OK';
+          el.txtGps.textContent = `GPS ${acc}`;
+        } else {
+          el.pillGps.className = state.isDriving ? 'status-pill warn' : 'status-pill';
+          el.txtGps.textContent = state.isDriving ? 'GPS 탐색' : 'GPS 대기';
+        }
+
+        el.btnSound.className = state.settings.soundEnabled ? 'icon-btn on' : 'icon-btn';
+        el.icoSoundOn.classList.toggle('hidden', !state.settings.soundEnabled);
+        el.icoSoundOff.classList.toggle('hidden', state.settings.soundEnabled);
+
+        el.btnWake.className = wakeLock ? 'icon-btn on-emerald' : 'icon-btn';
+        el.btnMirror.className = state.mirrored ? 'icon-btn on-amber' : 'icon-btn';
+      }
+
+      function updateDriveBtnUI() {
+        if (state.isDriving) {
+          el.btnDriveToggle.classList.add('driving');
+          el.icoPlay.classList.add('hidden');
+          el.icoPause.classList.remove('hidden');
+          el.txtDriveBtn.textContent = '일시정지';
+        } else {
+          el.btnDriveToggle.classList.remove('driving');
+          el.icoPlay.classList.remove('hidden');
+          el.icoPause.classList.add('hidden');
+          el.txtDriveBtn.textContent = state.settings.learningEnabled ? '주행 기록 & 예측 시작' : '전방 예측 시작';
+        }
+      }
+
+      function updateStatsUI() {
+        const nodesCount = state.db.nodes.length;
+        el.stNodes.textContent = nodesCount;
+        el.stTrips.textContent = state.db.trips;
+        el.stKm.textContent = (state.db.totalMeters / 1000).toFixed(2);
+        el.stSamples.textContent = state.db.totalSamples;
+
+        // 학습 데이터가 비어있을 때만 HUD에 퀵 샘플 버튼 표시
+        el.btnQuickSample.classList.toggle('hidden', nodesCount > 0);
+      }
+
+      function updateSettingsUI() {
+        el.sliderVibThresh.value = state.settings.vibThresholdG;
+        el.valVibThresh.textContent = `${state.settings.vibThresholdG.toFixed(2)} G`;
+        el.sliderBrakeThresh.value = state.settings.brakeThresholdMs2;
+        el.valBrakeThresh.textContent = `${state.settings.brakeThresholdMs2.toFixed(1)} m/s²`;
+        el.valZeroOffset.textContent = `${state.settings.imuZeroOffsetG.toFixed(3)} G`;
+
+        const setSw = (btn, on) => {
+          btn.classList.toggle('on', on);
+          btn.setAttribute('aria-checked', String(on));
+        };
+        setSw(el.swSound, state.settings.soundEnabled);
+        setSw(el.swHaptic, state.settings.hapticEnabled);
+        setSw(el.swLearn, state.settings.learningEnabled);
+
+        // 현재 프로토콜 보안 상태 표시
+        if (isSecureOrigin()) {
+          el.protoStatusPill.className = 'proto-pill secure';
+          el.protoStatusPill.textContent = `✓ 보안 연결 (${location.protocol}//) · 실제 GPS/센서 사용 가능`;
+        } else {
+          el.protoStatusPill.className = 'proto-pill insecure';
+          el.protoStatusPill.textContent = `⚠ 비보안 접속 (${location.protocol}) · 실제 주행 시 HTTPS 업로드 필요`;
+        }
+      }
+
+      function updateUpcomingHazardsList() {
+        const list = state.pred.upcomingHazards;
+        el.upcomingCountTag.textContent = `${list.length}곳`;
+        el.upcomingCountTag.className = list.length ? 'mini-pill rose' : 'mini-pill';
+        if (!list.length) {
+          el.upcomingHazardList.innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:12px 0;">전방 250m 이내 감지된 특이 진동/급감속 구간이 없습니다.</div>';
+          return;
+        }
+        el.upcomingHazardList.innerHTML = list.map((h) => `
+          <div class="hazard-item">
+            <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+              <span class="mini-pill ${h.cls}">${h.kind}</span>
+              <span style="font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${h.dist}m 앞${h.label ? ` · ${h.label}` : ''}</span>
+            </div>
+            <div class="tabular" style="font-weight:800;color:${h.cls === 'rose' ? '#fda4af' : '#fcd34d'};flex-shrink:0;">
+              ${h.val} <span style="color:var(--text-secondary);font-weight:600;">(${h.spd})</span>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      let lastHazardRenderTs = 0;
+      function frameLoop() {
+        const v = state.vehicle;
+        const p = state.pred;
+
+        // 1) 현재 상태 바 갱신
+        el.curSpeed.textContent = Math.round(v.speedKmh);
+        el.curAccel.textContent = `${v.accelMs2 >= 0 ? '+' : ''}${v.accelMs2.toFixed(1)}`;
+        el.curVib.textContent = v.vibG.toFixed(2);
+        el.curHeading.textContent = formatCompass(v.heading);
+        el.miniZoneTxt.textContent = state.mode === 'sim' && state.isDriving ? `· ${state.sim.zoneLabel}` : '';
+
+        // 2) 히어로 예측 카드 갱신
+        el.lblDistHead.textContent = `${state.lookaheadM}m`;
+        if (p.matched) {
+          el.hudConfBadge.textContent = `${p.count}회 학습됨 · ${p.confidence}%`;
+          el.hudConfBadge.className = 'conf-badge learned';
+          el.pillPredMethod.textContent = p.method === 'PATH' ? '경로매칭' : '투영매칭';
+          el.pillPredMethod.className = 'mini-pill cyan';
+
+          // 속도 & 증감
+          el.predSpeedVal.textContent = Math.round(p.speedKmh);
+          const diff = Math.round(p.speedKmh - v.speedKmh);
+          if (diff <= -10) {
+            el.predSpeedDeltaTxt.textContent = `▼ ${diff} km/h 감속`;
+            el.predSpeedDeltaTxt.style.color = '#fda4af';
+            el.boxPredSpeed.className = 'pred-box speed-box alert-rose';
+          } else if (diff <= -4) {
+            el.predSpeedDeltaTxt.textContent = `▼ ${diff} km/h 감속`;
+            el.predSpeedDeltaTxt.style.color = '#fcd34d';
+            el.boxPredSpeed.className = 'pred-box speed-box alert-amber';
+          } else if (diff >= 6) {
+            el.predSpeedDeltaTxt.textContent = `▲ +${diff} km/h 가속`;
+            el.predSpeedDeltaTxt.style.color = '#6ee7b7';
+            el.boxPredSpeed.className = 'pred-box speed-box';
+          } else {
+            el.predSpeedDeltaTxt.textContent = '정속 유지';
+            el.predSpeedDeltaTxt.style.color = '#67e8f9';
+            el.boxPredSpeed.className = 'pred-box speed-box';
+          }
+
+          // 진동 (G RMS)
+          const vm = classifyVibG(p.vibG);
+          el.predVibVal.textContent = p.vibG.toFixed(2);
+          el.predVibVal.style.color = vm.color;
+          el.pillVibGrade.textContent = vm.label;
+          el.pillVibGrade.className = `mini-pill ${vm.cls}`;
+          el.vseg1.style.background = vm.level >= 1 ? '#10b981' : 'rgba(148,163,184,0.16)';
+          el.vseg2.style.background = vm.level >= 2 ? '#22d3ee' : 'rgba(148,163,184,0.16)';
+          el.vseg3.style.background = vm.level >= 3 ? '#f59e0b' : 'rgba(148,163,184,0.16)';
+          el.vseg4.style.background = vm.level >= 4 ? '#f43f5e' : 'rgba(148,163,184,0.16)';
+          el.boxPredVib.className = vm.level === 4 ? 'pred-box alert-rose' : vm.level === 3 ? 'pred-box alert-amber' : 'pred-box';
+
+          // 가속도 (m/s²)
+          const am = classifyAccel(p.accelMs2);
+          el.predAccelVal.textContent = `${p.accelMs2 >= 0 ? '+' : ''}${p.accelMs2.toFixed(1)}`;
+          el.predAccelVal.style.color = am.color;
+          el.pillAccelState.textContent = am.label;
+          el.pillAccelState.className = `mini-pill ${am.cls}`;
+          const clamped = Math.max(-3, Math.min(3, p.accelMs2));
+          const pct = (Math.abs(clamped) / 3) * 50;
+          el.predAccelFill.style.width = `${pct}%`;
+          el.predAccelFill.style.left = clamped >= 0 ? '50%' : `${50 - pct}%`;
+          el.predAccelFill.style.background = am.color;
+          el.boxPredAccel.className = am.cls === 'rose' ? 'pred-box alert-rose' : 'pred-box';
+        } else {
+          el.hudConfBadge.textContent = state.db.nodes.length ? '전방 미학습 구간' : '미학습 구간';
+          el.hudConfBadge.className = 'conf-badge';
+          el.pillPredMethod.textContent = '탐색중';
+          el.pillPredMethod.className = 'mini-pill';
+          el.predSpeedVal.textContent = '--';
+          el.predSpeedDeltaTxt.textContent = '학습 필요';
+          el.predSpeedDeltaTxt.style.color = 'var(--text-muted)';
+          el.boxPredSpeed.className = 'pred-box speed-box';
+
+          el.predVibVal.textContent = '--';
+          el.predVibVal.style.color = 'var(--text-muted)';
+          el.pillVibGrade.textContent = '미학습';
+          el.pillVibGrade.className = 'mini-pill';
+          [el.vseg1, el.vseg2, el.vseg3, el.vseg4].forEach((s) => (s.style.background = 'rgba(148,163,184,0.14)'));
+          el.boxPredVib.className = 'pred-box';
+
+          el.predAccelVal.textContent = '--';
+          el.predAccelVal.style.color = 'var(--text-muted)';
+          el.pillAccelState.textContent = '미학습';
+          el.pillAccelState.className = 'mini-pill';
+          el.predAccelFill.style.width = '0%';
+          el.boxPredAccel.className = 'pred-box';
+        }
+
+        // 3) 상단 경고 배너
+        if (p.warning) {
+          el.hudWarnBanner.classList.remove('hidden');
+          el.hudWarnBanner.classList.toggle('amber', p.warning.severity !== 'critical');
+          el.hudWarnTitle.textContent = p.warning.title;
+          el.hudWarnSub.textContent = p.warning.sub;
+          el.hudWarnMetric.textContent = p.warning.metric;
+        } else {
+          el.hudWarnBanner.classList.add('hidden');
+        }
+
+        // 4) 활성 탭 캔버스만 효율적으로 렌더링
+        if (state.activeTab === 'hud') {
+          drawMiniProfile();
+        } else if (state.activeTab === 'radar') {
+          drawRadar();
+          drawDetailProfile();
+          const now = Date.now();
+          if (now - lastHazardRenderTs > 450) {
+            lastHazardRenderTs = now;
+            updateUpcomingHazardsList();
+          }
+        }
+
+        requestAnimationFrame(frameLoop);
+      }
+
+      // =====================================================================
+      // 13. JSON 백업/복원 & CSV (UTF-8 BOM) 내보내기
+      // =====================================================================
+      function downloadBlob(content, filename, mime) {
+        try {
+          const blob = new Blob([content], { type: mime });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          showToast('파일 저장에 실패했습니다.', 'error');
+        }
+      }
+
+      function exportJson() {
+        if (!state.db.nodes.length) {
+          showToast('백업할 학습 데이터가 없습니다.', 'warn');
+          return;
+        }
+        const tag = new Date().toISOString().replace(/[:\-T]/g, '').slice(0, 14);
+        downloadBlob(JSON.stringify({ app: 'CommuteMobileHUD', version: 3, db: state.db, settings: state.settings }, null, 2), `출퇴근HUD_백업_${tag}.json`, 'application/json;charset=utf-8;');
+        showToast('JSON 백업 파일을 다운로드했습니다.', 'success');
+      }
+
+      function importJson(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const parsed = JSON.parse(String(reader.result));
+            const db = parsed.db || parsed;
+            if (!db || !Array.isArray(db.nodes)) throw new Error('형식 오류');
+            state.db = {
+              trips: Number(db.trips) || 0,
+              totalSamples: Number(db.totalSamples) || db.nodes.length,
+              totalMeters: Number(db.totalMeters) || db.nodes.length * NODE_STEP_M,
+              nextId: Number(db.nextId) || db.nodes.length + 1,
+              nodes: db.nodes,
+            };
+            rebuildSpatialIndex();
+            saveDb(true);
+            updateStatsUI();
+            runPrediction();
+            showToast(`학습 노드 ${state.db.nodes.length}개를 복원했습니다.`, 'success');
+          } catch (e) {
+            showToast('올바른 JSON 백업 파일이 아닙니다.', 'error');
+          }
+        };
+        reader.readAsText(file, 'utf-8');
+      }
+
+      function exportCsv() {
+        if (!state.db.nodes.length) {
+          showToast('내보낼 학습 데이터가 없습니다.', 'warn');
+          return;
+        }
+        const cols = ['노드ID', '구간명', '위도', '경도', '방위각(도)', '통과횟수', '평균속도(km/h)', '최대속도(km/h)', '평균진동(G)', '최대진동(G)', '평균가속도(m/s²)', '최소가속도(m/s²)'];
+        const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        const rows = state.db.nodes.map((n) => [
+          n.id, n.label || '', n.lat.toFixed(6), n.lng.toFixed(6), n.heading.toFixed(1),
+          n.count, n.avgSpeed.toFixed(2), (n.maxSpeed || n.avgSpeed).toFixed(2),
+          n.avgVib.toFixed(3), (n.maxVib || n.avgVib).toFixed(3),
+          n.avgAccel.toFixed(2), (n.minAccel ?? n.avgAccel).toFixed(2)
+        ].map(esc).join(','));
+        const csv = '\uFEFF' + [cols.map(esc).join(','), ...rows].join('\r\n');
+        const tag = new Date().toISOString().replace(/[:\-T]/g, '').slice(0, 14);
+        downloadBlob(csv, `출퇴근HUD_데이터_${tag}.csv`, 'text/csv;charset=utf-8;');
+        showToast('CSV 파일(UTF-8 BOM)을 저장했습니다.', 'success');
+      }
+
+      // =====================================================================
+      // 14. 이벤트 바인딩 & 초기화
+      // =====================================================================
+      function switchTab(tab) {
+        state.activeTab = tab;
+        el.viewHud.classList.toggle('active', tab === 'hud');
+        el.viewRadar.classList.toggle('active', tab === 'radar');
+        el.viewSettings.classList.toggle('active', tab === 'settings');
+        document.querySelectorAll('.nav-btn').forEach((b) => {
+          b.classList.toggle('active', b.dataset.tab === tab);
+        });
+        // 탭 표시 직후 캔버스 크기 재계산
+        requestAnimationFrame(() => {
+          resizeAllCanvases();
+          if (tab === 'radar') updateUpcomingHazardsList();
+        });
+      }
+
+      function bindEvents() {
+        // 하단 3탭 전환
+        document.querySelectorAll('.nav-btn').forEach((btn) => {
+          btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+        });
+
+        // 실제 / 시뮬 모드 전환
+        el.btnModeReal.addEventListener('click', () => setMode('real'));
+        el.btnModeSim.addEventListener('click', () => setMode('sim'));
+        el.btnBannerToSim.addEventListener('click', () => setMode('sim'));
+
+        // 상단 아이콘 버튼 (사운드, WakeLock, 앞유리 좌우반전, 전체화면)
+        el.btnSound.addEventListener('click', () => {
+          state.settings.soundEnabled = !state.settings.soundEnabled;
+          saveSettings();
+          updateTopBarUI();
+          updateSettingsUI();
+          showToast(state.settings.soundEnabled ? '경고음 켜짐' : '경고음 음소거', 'info');
+        });
+
+        el.btnWake.addEventListener('click', async () => {
+          if (wakeLock) {
+            await releaseWakeLock();
+            showToast('화면 꺼짐 방지를 해제했습니다.', 'info');
+          } else {
+            const ok = await acquireWakeLock(false);
+            if (ok) showToast('화면 꺼짐 방지(Wake Lock)가 활성화되었습니다.', 'success');
+          }
+        });
+
+        el.btnMirror.addEventListener('click', () => {
+          state.mirrored = !state.mirrored;
+          el.viewHud.classList.toggle('hud-mirrored', state.mirrored);
+          updateTopBarUI();
+          showToast(state.mirrored ? '앞유리 반사 HUD(좌우반전) 모드 켜짐' : '일반 화면 모드로 복귀', 'info');
+        });
+
+        el.btnFullscreen.addEventListener('click', async () => {
+          try {
+            if (!document.fullscreenElement) {
+              if (document.documentElement.requestFullscreen) {
+                await document.documentElement.requestFullscreen();
+              } else {
+                showToast('iOS Safari에서는 "홈 화면에 추가"로 전체화면 실행이 가능합니다.', 'info');
+              }
+            } else {
+              await document.exitFullscreen();
+            }
+          } catch (e) {
+            showToast('홈 화면에 추가하면 전체화면 앱으로 실행됩니다.', 'info');
+          }
+        });
+
+        document.addEventListener('fullscreenchange', () => {
+          const isFs = !!document.fullscreenElement;
+          el.icoFsEnter.classList.toggle('hidden', isFs);
+          el.icoFsExit.classList.toggle('hidden', !isFs);
+          setTimeout(resizeAllCanvases, 150);
+        });
+
+        // 전방 예측 거리 칩 (50 / 100 / 150 / 200m)
+        document.querySelectorAll('.dist-chip').forEach((chip) => {
+          chip.addEventListener('click', () => {
+            state.lookaheadM = Number(chip.dataset.dist);
+            document.querySelectorAll('.dist-chip').forEach((c) => c.classList.toggle('active', Number(c.dataset.dist) === state.lookaheadM));
+            runPrediction();
+          });
+        });
+
+        // 시뮬레이션 인라인 배속 & 방향 전환
+        document.querySelectorAll('.sim-spd').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            state.sim.speedMult = Number(btn.dataset.spd) || 1;
+            document.querySelectorAll('.sim-spd').forEach((b) => b.classList.toggle('active', Number(b.dataset.spd) === state.sim.speedMult));
+            updateTopBarUI();
+          });
+        });
+
+        el.btnSimDir.addEventListener('click', () => {
+          state.sim.reverse = !state.sim.reverse;
+          el.btnSimDir.textContent = state.sim.reverse ? '퇴근' : '출근';
+          el.btnSimDir.classList.toggle('active', state.sim.reverse);
+          state.tracker.lastNodeId = null;
+          const pt = sampleSimTrack(state.sim.distM, state.sim.reverse);
+          state.vehicle.heading = pt.heading;
+          runPrediction();
+          showToast(state.sim.reverse ? '퇴근(역방향) 주행으로 전환 (출근 데이터와 분리)' : '출근(정방향) 주행으로 전환', 'info');
+        });
+
+        // 주행 시작 / 일시정지 & 퀵 샘플 불러오기
+        el.btnDriveToggle.addEventListener('click', () => {
+          if (state.isDriving) pauseDriving();
+          else startDriving();
+        });
+        el.btnQuickSample.addEventListener('click', generateFiveSampleTrips);
+
+        // 경로 레이더 탭 컨트롤 (히트맵 지표 / 헤딩업 / 줌 / 상세 차트 시리즈)
+        document.querySelectorAll('.radar-metric-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            state.radar.metric = btn.dataset.metric;
+            document.querySelectorAll('.radar-metric-btn').forEach((b) => {
+              b.className = 'ctrl-chip radar-metric-btn';
+              if (b.dataset.metric === state.radar.metric) {
+                b.classList.add(state.radar.metric === 'vib' ? 'active-rose' : state.radar.metric === 'speed' ? 'active-emerald' : 'active');
+              }
+            });
+          });
+        });
+
+        el.btnRadarOrient.addEventListener('click', () => {
+          state.radar.headingUp = !state.radar.headingUp;
+          el.btnRadarOrient.textContent = state.radar.headingUp ? '헤딩업 ↑' : '북쪽 고정 N';
+          el.btnRadarOrient.classList.toggle('active', state.radar.headingUp);
+        });
+
+        el.btnZoomIn.addEventListener('click', () => {
+          state.radar.radiusM = Math.max(120, state.radar.radiusM - 40);
+        });
+        el.btnZoomOut.addEventListener('click', () => {
+          state.radar.radiusM = Math.min(600, state.radar.radiusM + 40);
+        });
+
+        document.querySelectorAll('.detail-series-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const k = btn.dataset.series;
+            state.detailSeries[k] = !state.detailSeries[k];
+            if (state.detailSeries[k]) {
+              btn.classList.add(k === 'speed' ? 'active-emerald' : k === 'vib' ? 'active-rose' : 'active');
+            } else {
+              btn.classList.remove('active', 'active-emerald', 'active-rose');
+            }
+          });
+        });
+
+        // 설정 탭: 센서 점검 & 영점 보정
+        el.btnCheckSensors.addEventListener('click', runBatchSensorCheck);
+        el.btnCalibrateImu.addEventListener('click', calibrateMountZero);
+
+        // 임계치 슬라이더 & 토글 스위치
+        el.sliderVibThresh.addEventListener('input', (e) => {
+          state.settings.vibThresholdG = Number(e.target.value);
+          el.valVibThresh.textContent = `${state.settings.vibThresholdG.toFixed(2)} G`;
+          saveSettings();
+          runPrediction();
+        });
+
+        el.sliderBrakeThresh.addEventListener('input', (e) => {
+          state.settings.brakeThresholdMs2 = Number(e.target.value);
+          el.valBrakeThresh.textContent = `${state.settings.brakeThresholdMs2.toFixed(1)} m/s²`;
+          saveSettings();
+          runPrediction();
+        });
+
+        el.swSound.addEventListener('click', () => {
+          state.settings.soundEnabled = !state.settings.soundEnabled;
+          saveSettings();
+          updateTopBarUI();
+          updateSettingsUI();
+        });
+
+        el.swHaptic.addEventListener('click', () => {
+          state.settings.hapticEnabled = !state.settings.hapticEnabled;
+          saveSettings();
+          updateSettingsUI();
+          if (state.settings.hapticEnabled && typeof navigator.vibrate === 'function') navigator.vibrate(40);
+        });
+
+        el.swLearn.addEventListener('click', () => {
+          state.settings.learningEnabled = !state.settings.learningEnabled;
+          saveSettings();
+          updateSettingsUI();
+          updateDriveBtnUI();
+          showToast(state.settings.learningEnabled ? '자동 학습 기록 켜짐' : '예측 전용 모드(기존 데이터 보호)', 'info');
+        });
+
+        // 데이터 관리 버튼
+        el.btnSettingsSample.addEventListener('click', generateFiveSampleTrips);
+        el.btnExportJson.addEventListener('click', exportJson);
+        el.inputImportJson.addEventListener('change', (e) => {
+          const f = e.target.files && e.target.files[0];
+          importJson(f);
+          e.target.value = '';
+        });
+        el.btnExportCsv.addEventListener('click', exportCsv);
+
+        el.btnResetData.addEventListener('click', () => {
+          if (!state.db.nodes.length) {
+            showToast('초기화할 데이터가 없습니다.', 'warn');
+            return;
+          }
+          el.modalReset.classList.remove('hidden');
+        });
+        el.btnResetCancel.addEventListener('click', () => el.modalReset.classList.add('hidden'));
+        el.modalReset.addEventListener('click', (e) => {
+          if (e.target === el.modalReset) el.modalReset.classList.add('hidden');
+        });
+        el.btnResetConfirm.addEventListener('click', () => {
+          state.db = { trips: 0, totalSamples: 0, totalMeters: 0, nextId: 1, nodes: [] };
+          rebuildSpatialIndex();
+          state.tracker.lastLat = null;
+          state.tracker.lastLng = null;
+          state.tracker.lastNodeId = null;
+          saveDb(true);
+          clearPrediction();
+          updateStatsUI();
+          updateUpcomingHazardsList();
+          el.modalReset.classList.add('hidden');
+          showToast('모든 학습 데이터가 초기화되었습니다.', 'info');
+        });
+
+        // 화면 회전 및 크기 변경 대응
+        window.addEventListener('resize', () => setTimeout(resizeAllCanvases, 80));
+        window.addEventListener('orientationchange', () => setTimeout(resizeAllCanvases, 200));
+        if (typeof ResizeObserver !== 'undefined') {
+          const ro = new ResizeObserver(() => resizeAllCanvases());
+          ro.observe(el.miniCanvasWrap);
+          ro.observe(el.radarStage);
+          ro.observe(el.detailChartStage);
+        }
+      }
+
+      function init() {
+        injectPwaManifest();
+        buildSimTrack();
+        loadSettings();
+        loadDb();
+
+        const startPt = sampleSimTrack(0, false);
+        state.vehicle.lat = startPt.lat;
+        state.vehicle.lng = startPt.lng;
+        state.vehicle.heading = startPt.heading;
+
+        updateTopBarUI();
+        updateDriveBtnUI();
+        updateStatsUI();
+        updateSettingsUI();
+        runPrediction();
+        bindEvents();
+        resizeAllCanvases();
+        requestAnimationFrame(frameLoop);
+      }
+
+      window.addEventListener('DOMContentLoaded', init);
+    })();
+  </script>
+</body>
+</html>
